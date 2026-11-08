@@ -21,7 +21,7 @@ pulseaudio = ["dep:pulseaudio"]
 debug-fail = ["dep:rustc-hash"]
 
 [dependencies]
-tuikit = { git = "https://github.com/craftty-org/tuikit", features = ["http", "paths", "widgets-ui"] }
+tuikit = { version = "0.1", git = "https://github.com/craftty-org/tuikit", features = ["http", "paths", "widgets-ui"] }
 # `unstable-rendered-line-info` gates `Paragraph::line_count`, which the lyrics
 # pane needs: row offsets for the scroll and the highlight have to agree with
 # what ratatui's wrapper actually renders, and only ratatui knows that.
