@@ -860,11 +860,24 @@ jobs:
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y pkg-config libasound2-dev
 
+      # Prefer OIDC trusted publishing; fall back to the CRATES_IO API token
+      # when the publisher config is missing on crates.io (the OIDC action
+      # fails with "No Trusted Publishing config found" in that case, and a
+      # stable release should not be blocked on the registry-side setup).
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
+        continue-on-error: true
 
       - name: Set crates.io token
-        run: echo "CARGO_REGISTRY_TOKEN=${{ steps.auth.outputs.token }}" >> "${GITHUB_ENV}"
+        run: |
+          if [ -n "${{ steps.auth.outputs.token }}" ]; then
+            echo "CARGO_REGISTRY_TOKEN=${{ steps.auth.outputs.token }}" >> "${GITHUB_ENV}"
+          elif [ -n "${{ secrets.CRATES_IO }}" ]; then
+            echo "CARGO_REGISTRY_TOKEN=${{ secrets.CRATES_IO }}" >> "${GITHUB_ENV}"
+          else
+            echo "::error::no crates.io credentials: trusted publishing unavailable and CRATES_IO secret unset" >&2
+            exit 1
+          fi
 
       - name: Publish crates
         # Both crates, in dependency order. Publishing only `gtm` left crates.io
