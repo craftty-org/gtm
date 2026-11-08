@@ -548,11 +548,7 @@ impl PodcastManager {
             .filter(|u| !u.trim().is_empty())
     }
 
-    pub(crate) fn cached_transcript(
-        &self,
-        feed_id: &str,
-        episode_index: usize,
-    ) -> Option<LrcData> {
+    pub(crate) fn cached_transcript(&self, feed_id: &str, episode_index: usize) -> Option<LrcData> {
         self.transcripts
             .get(&(feed_id.to_string(), episode_index))
             .cloned()
@@ -564,10 +560,10 @@ impl PodcastManager {
         episode_index: usize,
         lyrics: LrcData,
     ) {
-        if self.transcripts.len() >= 128 {
-            if let Some(victim) = self.transcripts.keys().next().cloned() {
-                self.transcripts.remove(&victim);
-            }
+        if self.transcripts.len() >= 128
+            && let Some(victim) = self.transcripts.keys().next().cloned()
+        {
+            self.transcripts.remove(&victim);
         }
         self.transcripts
             .insert((feed_id.to_string(), episode_index), lyrics);

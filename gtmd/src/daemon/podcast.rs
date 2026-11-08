@@ -289,11 +289,7 @@ impl Podcast {
         // palette) in the normal pane and in Zen, both of which read this
         // row's `cover_url`. Episode art wins; the feed's stored art is the
         // fallback for feeds that publish art only through the directory.
-        let feed_art = inner
-            .podcast
-            .lock()
-            .await
-            .feed_image_url(feed_id);
+        let feed_art = inner.podcast.lock().await.feed_image_url(feed_id);
         let cover_url = episode
             .image_url
             .clone()

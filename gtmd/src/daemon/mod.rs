@@ -4681,12 +4681,9 @@ impl Daemon {
                 }
                 {
                     let mut state = inner.state.write().await;
-                    if let Err(e) = state.promote(
-                        next.clone(),
-                        actual,
-                        dur,
-                        source_for_path(&next.path),
-                    ) {
+                    if let Err(e) =
+                        state.promote(next.clone(), actual, dur, source_for_path(&next.path))
+                    {
                         warn!("crossfade promote failed: {e}");
                     }
                 }
