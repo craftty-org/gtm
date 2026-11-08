@@ -1124,6 +1124,7 @@ dependencies = [
  "crossterm_winapi",
  "derive_more",
  "document-features",
+ "futures-core",
  "mio",
  "parking_lot",
  "rustix 1.1.4",
@@ -1351,7 +1352,16 @@ version = "5.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "44c45a9d03d6676652bcb5e724c7e988de1acad23a711b5217ab9cbecbec2225"
 dependencies = [
- "dirs-sys",
+ "dirs-sys 0.4.1",
+]
+
+[[package]]
+name = "dirs"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3e8aa94d75141228480295a7d0e7feb620b1a5ad9f12bc40be62411e38cce4e"
+dependencies = [
+ "dirs-sys 0.5.0",
 ]
 
 [[package]]
@@ -1362,8 +1372,20 @@ checksum = "520f05a5cbd335fae5a99ff7a6ab8627577660ee5cfd6a94a6a929b52ff0321c"
 dependencies = [
  "libc",
  "option-ext",
- "redox_users",
+ "redox_users 0.4.6",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "dirs-sys"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e01a3366d27ee9890022452ee61b2b63a67e6f13f58900b651ff5665f0bb1fab"
+dependencies = [
+ "libc",
+ "option-ext",
+ "redox_users 0.5.3",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1952,7 +1974,7 @@ dependencies = [
  "color-eyre",
  "color-thief",
  "crossterm 0.28.1",
- "dirs",
+ "dirs 5.0.1",
  "fastrand",
  "fundsp",
  "futures",
@@ -1993,6 +2015,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tui-big-text",
+ "tuikit",
  "urlencoding",
  "uuid",
  "walkdir",
@@ -2011,7 +2034,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
- "dirs",
+ "dirs 5.0.1",
  "fastrand",
  "futures",
  "getrandom 0.2.17",
@@ -4738,6 +4761,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "redox_users"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "60dc65c0ff1a7ae1294b0c67b9f14baf70b644404010370171787bfac1038fc0"
+dependencies = [
+ "libredox",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "ref-cast"
 version = "1.0.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6675,6 +6708,22 @@ dependencies = [
  "itertools 0.15.0",
  "ratatui-core",
  "ratatui-widgets",
+]
+
+[[package]]
+name = "tuikit"
+version = "0.1.0"
+source = "git+https://github.com/craftty-org/tuikit#37300f235846f0ebf68deee2d79d73fb2eb335e0"
+dependencies = [
+ "crossterm 0.29.0",
+ "dirs 6.0.0",
+ "futures-util",
+ "ratatui",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

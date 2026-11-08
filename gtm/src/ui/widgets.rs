@@ -11,7 +11,7 @@
 use crate::ui::*;
 
 pub(crate) use tuikit::widgets::textfx::{cubic_ease_in, cubic_ease_out};
-pub(crate) use tuikit::widgets::viewport::{step_viewport, ListRows};
+pub(crate) use tuikit::widgets::viewport::{ListRows, step_viewport};
 
 pub(crate) fn dim_color(c: Color) -> Color {
     match c {
