@@ -206,6 +206,17 @@ impl Cover {
             return Ok(DaemonRes::CoverArt { data: Some(b64) });
         }
 
+        // A podcast row queued or restored before episode tracks carried
+        // `cover_url` names its show only by `podcast://<feed>/<index>`. Heal
+        // it from the feed: refresh once when the in-memory episode cache is
+        // cold (every restart), then read the episode's own art or the feed's.
+        if let Some(url) = Self::podcast_art(inner, track_path).await
+            && let Some(bytes) = Self::url_cover(inner, &url).await
+        {
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            return Ok(DaemonRes::CoverArt { data: Some(b64) });
+        }
+
         if discovered_artist.is_empty() {
             let state = inner.state.read().await;
             let mut in_merged = state.queue.iter().chain(state.default_list.iter());
@@ -311,6 +322,35 @@ impl Cover {
         }
 
         Ok(DaemonRes::CoverArt { data: None })
+    }
+
+    /// Show artwork for a `podcast://<feed>/<index>` row, if it names one.
+    ///
+    /// Read under a short lock and dropped before any network fetch, so the
+    /// RSS refresh (when the episode cache is cold) never runs under the
+    /// podcast lock.
+    async fn podcast_art(inner: &DaemonInner, path: Option<&str>) -> Option<String> {
+        let rest = path?.strip_prefix("podcast://")?;
+        let (feed_id, index) = rest.split_once('/')?;
+        let (feed_id, index) = (feed_id.trim(), index.trim());
+        if feed_id.is_empty() {
+            return None;
+        }
+        let index: usize = index.parse().ok()?;
+        if inner
+            .podcast
+            .lock()
+            .await
+            .episode_at(feed_id, index)
+            .is_none()
+        {
+            let _ = crate::daemon::podcast::refresh_unlocked(inner, feed_id).await;
+        }
+        let podcast = inner.podcast.lock().await;
+        podcast
+            .episode_at(feed_id, index)
+            .and_then(|e| e.image_url.clone())
+            .or_else(|| podcast.feed_image_url(feed_id))
     }
 
     /// Cover art for a live stream, in order of preference:

@@ -826,15 +826,22 @@ impl App {
                 // Auto-fetch lyrics (or a podcast transcript) on track change
                 // if enabled and (pane visible or auto-fetch enabled). A live
                 // stream's path never changes, so `live_advanced` is a track
-                // change there too.
+                // change there too. A podcast episode always fetches its
+                // transcript: starting playback is the stream start the
+                // transcript belongs to, and misses stay silent.
                 //
                 // Keyed on a *different* track, not on every `PlaybackStarted`.
                 // A `PlaybackStarted` fires for a crossfade and for the same
                 // track restarting, where the lyrics already in the pane are
                 // the right ones and re-fetching them resets the user's manual
                 // sync offset for nothing.
+                let is_podcast = self
+                    .state
+                    .current_track
+                    .as_ref()
+                    .is_some_and(|t| t.path.starts_with("podcast://"));
                 if (track_changed || live_advanced)
-                    && (self.auto_fetch_lyrics || self.lyrics.show)
+                    && (self.auto_fetch_lyrics || self.lyrics.show || is_podcast)
                     && let Some(track) = self.state.current_track.clone()
                 {
                     self.fetch_lyrics(&track, false);
@@ -873,6 +880,10 @@ impl App {
                         if state.version >= self.state.version || restarted || track_differs {
                             self.state = *state;
                             self.client.seed_clock(&self.state).await;
+                            // The snapshot replaced the mirror wholesale, so
+                            // every `prev_*` tracker is suspect: sweep rather
+                            // than trust field-by-field reconciliation.
+                            self.request_full_sync();
                             // Re-render so the initial state (or any daemon-side
                             // refresh) paints immediately instead of waiting for
                             // the next keypress or animation trigger.
@@ -959,14 +970,24 @@ impl App {
                         self.podcast.feeds = feeds;
                         self.podcast.feeds_pending = false;
                     }
-                    IpcResult::PodcastSearch(results) => {
+                    IpcResult::PodcastSearch(term, results) => {
+                        if term != self.podcast.search_term {
+                            // Answers a query the user has already replaced.
+                            continue;
+                        }
                         self.podcast.results = results;
                         self.podcast.searching = false;
                         // The pane's row count and its scroller both read this,
                         // so a late reply cannot leave the cursor past the end.
                         self.data_dirty = true;
                     }
-                    IpcResult::PodcastEpisodes(eps) => {
+                    IpcResult::PodcastEpisodes(feed_id, eps) => {
+                        if let Some(want) = &self.podcast.episodes_feed_id
+                            && want != &feed_id
+                        {
+                            // Answers a feed the user has already left.
+                            continue;
+                        }
                         self.podcast.episodes = eps;
                     }
                     IpcResult::RadioSearch(stations) => {

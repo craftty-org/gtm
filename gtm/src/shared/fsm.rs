@@ -108,6 +108,34 @@ impl DaemonState {
         Ok(())
     }
 
+    /// Atomically replace the track on air while playback continues.
+    ///
+    /// Allowed from: Playing. A crossfade promotion is a track change without
+    /// an intervening stop; making it an explicit transition (rather than
+    /// field assignment) keeps the invariant check and the version bump on
+    /// exactly the path that changes the track.
+    pub fn promote(
+        &mut self,
+        track: TrackInfo,
+        time_pos: f64,
+        duration: f64,
+        source: &str,
+    ) -> Result<()> {
+        tripwire::check(FailPoint::StateTransition)?;
+        if self.status != PlaybackStatus::Playing {
+            return Err(CoreError::Daemon(format!(
+                "promote() from invalid state: {:?}",
+                self.status
+            )));
+        }
+        self.current_track = Some(track);
+        self.time_pos = time_pos.max(0.0);
+        self.duration = duration.max(0.0);
+        self.source = source.to_string();
+        self.commit();
+        Ok(())
+    }
+
     /// Seek to absolute position in seconds. Clamped to [0, duration].
     pub fn seek(&mut self, pos: f64) -> Result<()> {
         tripwire::check(FailPoint::StateTransition)?;
@@ -374,6 +402,15 @@ impl DaemonState {
             !(self.status == PlaybackStatus::Playing && self.current_track.is_none()),
             "status is Playing but current_track is None"
         );
+        assert!(
+            !(self.status == PlaybackStatus::Stopped && self.current_track.is_some()),
+            "status is Stopped but current_track is Some"
+        );
+        assert!(
+            !(self.status == PlaybackStatus::Stopped && !self.source.is_empty()),
+            "status is Stopped but source is set"
+        );
+        assert!(self.duration >= 0.0, "negative duration {}", self.duration);
         assert!(
             self.crossfade
                 .as_ref()

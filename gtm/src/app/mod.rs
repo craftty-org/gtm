@@ -864,8 +864,11 @@ pub(crate) enum IpcResult {
     SpotifyMatch(String),
     PodcastStatus(Option<PodcastStatus>),
     PodcastFeeds(Vec<PodcastFeed>),
-    PodcastSearch(Vec<PodcastResult>),
-    PodcastEpisodes(Vec<PodcastEpisode>),
+    /// Directory results tagged with the term they answer, so a slow reply for
+    /// an old query cannot overwrite the rows for the current one.
+    PodcastSearch(String, Vec<PodcastResult>),
+    /// Episode list tagged with the feed it belongs to, for the same reason.
+    PodcastEpisodes(String, Vec<PodcastEpisode>),
     RadioSearch(Vec<RadioStation>),
     RadioTop(Vec<RadioStation>),
     RadioCliamp(Vec<RadioStation>),

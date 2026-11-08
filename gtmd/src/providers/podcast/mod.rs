@@ -178,6 +178,9 @@ pub struct PodcastManager {
     client: reqwest::Client,
     feeds: Vec<SubscribedFeed>,
     episodes: HashMap<String, Vec<PodcastEpisode>>,
+    /// Parsed transcripts keyed by `(feed_id, episode_index)`, so replaying an
+    /// episode does not re-download its VTT. Dropped for a feed on refresh.
+    transcripts: HashMap<(String, usize), LrcData>,
     error: Option<String>,
     /// Directory results, most recent first, kept only to supply artwork to
     /// `add_feed`: the feeds themselves carry none often enough that
@@ -203,6 +206,7 @@ impl PodcastManager {
                 .unwrap_or_default(),
             feeds: Vec::new(),
             episodes: HashMap::new(),
+            transcripts: HashMap::new(),
             error: None,
             discovery: Vec::new(),
             discovery_cache: HashMap::new(),
@@ -372,6 +376,7 @@ impl PodcastManager {
             });
         }
         self.episodes.insert(id.clone(), parsed.episodes.clone());
+        self.drop_transcripts_for(&id);
         self.error = None;
         self.save()?;
         Ok(PodcastFeed {
@@ -417,6 +422,7 @@ impl PodcastManager {
         feed.image_url = art.clone();
         self.episodes
             .insert(feed_id.to_string(), parsed.episodes.clone());
+        self.drop_transcripts_for(feed_id);
         self.error = None;
         self.save()?;
         Ok(PodcastFeed {
@@ -485,6 +491,7 @@ impl PodcastManager {
             .ok_or_else(|| "unknown podcast feed".to_string())?;
         self.feeds.remove(pos);
         self.episodes.remove(id);
+        self.drop_transcripts_for(id);
         self.save()
     }
 
@@ -529,6 +536,45 @@ impl PodcastManager {
     /// or has not been fetched yet.
     pub fn episode_at(&self, feed_id: &str, index: usize) -> Option<PodcastEpisode> {
         self.episodes.get(feed_id)?.get(index).cloned()
+    }
+
+    /// Stored feed artwork for `feed_id`, absorbed from the directory when the
+    /// feed itself publishes none.
+    pub(crate) fn feed_image_url(&self, feed_id: &str) -> Option<String> {
+        self.feeds
+            .iter()
+            .find(|f| f.id == feed_id)
+            .and_then(|f| f.image_url.clone())
+            .filter(|u| !u.trim().is_empty())
+    }
+
+    pub(crate) fn cached_transcript(
+        &self,
+        feed_id: &str,
+        episode_index: usize,
+    ) -> Option<LrcData> {
+        self.transcripts
+            .get(&(feed_id.to_string(), episode_index))
+            .cloned()
+    }
+
+    pub(crate) fn store_transcript(
+        &mut self,
+        feed_id: &str,
+        episode_index: usize,
+        lyrics: LrcData,
+    ) {
+        if self.transcripts.len() >= 128 {
+            if let Some(victim) = self.transcripts.keys().next().cloned() {
+                self.transcripts.remove(&victim);
+            }
+        }
+        self.transcripts
+            .insert((feed_id.to_string(), episode_index), lyrics);
+    }
+
+    fn drop_transcripts_for(&mut self, feed_id: &str) {
+        self.transcripts.retain(|(f, _), _| f != feed_id);
     }
 
     pub fn status(&self) -> PodcastStatus {

@@ -4481,7 +4481,9 @@ impl Daemon {
         let mut state = inner.state.write().await;
         state.status = PlaybackStatus::Stopped;
         state.current_track = None;
+        state.source.clear();
         state.time_pos = 0.0;
+        state.radio_title = None;
         inner.scrobble.lock().await.start("", 0.0);
         drop(state);
         Self::push_event(inner, DaemonEvent::TrackEnded);
@@ -4501,6 +4503,10 @@ impl Daemon {
         {
             let mut s = inner.state.write().await;
             s.status = PlaybackStatus::Stopped;
+            s.current_track = None;
+            s.source.clear();
+            s.time_pos = 0.0;
+            s.radio_title = None;
             s.sleep_timer = None;
             s.version += 1;
         }
@@ -4675,11 +4681,14 @@ impl Daemon {
                 }
                 {
                     let mut state = inner.state.write().await;
-                    state.status = PlaybackStatus::Playing;
-                    state.time_pos = actual;
-                    state.current_track = Some(next.clone());
-                    state.source = source_for_path(&next.path).to_string();
-                    state.duration = dur;
+                    if let Err(e) = state.promote(
+                        next.clone(),
+                        actual,
+                        dur,
+                        source_for_path(&next.path),
+                    ) {
+                        warn!("crossfade promote failed: {e}");
+                    }
                 }
                 inner.scrobble.lock().await.start(&next.path, actual);
                 // Update Last.fm now playing for the new track

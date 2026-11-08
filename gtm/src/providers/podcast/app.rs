@@ -12,7 +12,7 @@ impl App {
         tokio::spawn(async move {
             match c.podcast().episodes(&fid).await {
                 Ok((_title, eps)) => {
-                    let _ = ipc_tx.send(IpcResult::PodcastEpisodes(eps));
+                    let _ = ipc_tx.send(IpcResult::PodcastEpisodes(fid.clone(), eps));
                 }
                 Err(e) => {
                     self_err(&ipc_tx, format!("podcast episodes failed: {e}"));
@@ -41,6 +41,7 @@ impl App {
         self.podcast.results.clear();
         self.podcast.directory = directory;
         self.podcast.searching = true;
+        self.podcast.search_term = term.clone();
         let c = self.client.clone();
         let ipc_tx = self.ipc_tx.clone();
         tokio::spawn(async move {
@@ -57,10 +58,10 @@ impl App {
             };
             match res {
                 Ok(results) => {
-                    let _ = ipc_tx.send(IpcResult::PodcastSearch(results));
+                    let _ = ipc_tx.send(IpcResult::PodcastSearch(term.clone(), results));
                 }
                 Err(e) => {
-                    let _ = ipc_tx.send(IpcResult::PodcastSearch(Vec::new()));
+                    let _ = ipc_tx.send(IpcResult::PodcastSearch(term.clone(), Vec::new()));
                     self_err(&ipc_tx, format!("podcast search failed: {e}"));
                 }
             }

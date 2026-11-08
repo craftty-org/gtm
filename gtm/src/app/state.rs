@@ -534,6 +534,9 @@ pub struct PodcastView {
     pub subscribe_url: String,
     /// Public-directory results for the picker's search box.
     pub results: Vec<PodcastResult>,
+    /// Term the results in `results` answer, so a late reply for a previous
+    /// query is dropped instead of painting under the new one.
+    pub search_term: String,
     /// A search is in flight, so the picker can say so rather than showing an
     /// empty list that reads as "nothing matched".
     pub searching: bool,

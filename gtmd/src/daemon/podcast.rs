@@ -155,6 +155,20 @@ impl Podcast {
         feed_id: &str,
         episode_index: usize,
     ) -> Result<DaemonRes, CoreError> {
+        // A parsed transcript for this episode is replayed from memory rather
+        // than re-downloaded; refreshes drop the entry.
+        if let Some(hit) = inner
+            .podcast
+            .lock()
+            .await
+            .cached_transcript(feed_id, episode_index)
+        {
+            return Ok(DaemonRes::PodcastTranscriptRes {
+                feed_id: feed_id.to_string(),
+                episode_index,
+                lyrics: Box::new(hit),
+            });
+        }
         // The episode has to be in cache to know what transcripts it offers, so
         // an uncached feed is refreshed rather than reported as having none.
         if inner
@@ -178,6 +192,11 @@ impl Podcast {
         let lyrics = crate::podcast::fetch_transcripts(&client, &episode)
             .await
             .map_err(CoreError::Daemon)?;
+        inner
+            .podcast
+            .lock()
+            .await
+            .store_transcript(feed_id, episode_index, lyrics.clone());
         Ok(DaemonRes::PodcastTranscriptRes {
             feed_id: feed_id.to_string(),
             episode_index,
@@ -266,6 +285,20 @@ impl Podcast {
         } else {
             episode.title.clone()
         };
+        // Show artwork for the now-playing cover (and with it the reactive
+        // palette) in the normal pane and in Zen, both of which read this
+        // row's `cover_url`. Episode art wins; the feed's stored art is the
+        // fallback for feeds that publish art only through the directory.
+        let feed_art = inner
+            .podcast
+            .lock()
+            .await
+            .feed_image_url(feed_id);
+        let cover_url = episode
+            .image_url
+            .clone()
+            .or(feed_art)
+            .filter(|u| !u.trim().is_empty());
         let base = TrackInfo {
             id: 0,
             path: format!("podcast://{feed_id}/{episode_index}"),
@@ -274,6 +307,7 @@ impl Podcast {
             album: format!("Podcast \u{b7} {feed_title}"),
             duration: episode.duration_secs.unwrap_or(0) as f64,
             cover_path: None,
+            cover_url,
             favourite: false,
             ..Default::default()
         };
