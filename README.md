@@ -83,7 +83,7 @@ curl -fsSL https://gtmd.dev/install.sh | bash -s -- --nightly
 ```
 
 Or grab an archive
-[releases page](https://github.com/prjctimg/gtm/releases/latest), extract it,
+[releases page](https://github.com/craftty-org/gtm/releases/latest), extract it,
 and run the `./install.sh` in its directory
 
 See [CONTRIBUTING](./CONTRIBUTING.md#build-from-source) for more installation
@@ -167,9 +167,9 @@ crates used by the client and daemon.
 
 <a href="https://www.star-history.com/?repos=prjctimg%2Fgtm&amp;type=date&amp;legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=prjctimg/gtm&amp;type=date&amp;theme=auto&amp;legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=prjctimg/gtm&amp;type=date&amp;theme=auto&amp;legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=prjctimg/gtm&amp;type=date&amp;theme=auto&amp;legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=craftty-org/gtm&amp;type=date&amp;theme=auto&amp;legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=craftty-org/gtm&amp;type=date&amp;theme=auto&amp;legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=craftty-org/gtm&amp;type=date&amp;theme=auto&amp;legend=top-left" />
  </picture>
 </a>
 
@@ -177,7 +177,7 @@ crates used by the client and daemon.
 
 <!-- CONTRIBUTORS -->
 <p align="left">
-  <a href="https://github.com/iseeheaven"><img src="https://github.com/iseeheaven.png?size=80" width="50" height="50" style="border-radius:50%;margin:4px;" alt="iseeheaven"/></a> <a href="https://github.com/prjctimg"><img src="https://github.com/prjctimg.png?size=80" width="50" height="50" style="border-radius:50%;margin:4px;" alt="prjctimg"/></a> <a href="https://github.com/skchr"><img src="https://github.com/skchr.png?size=80" width="50" height="50" style="border-radius:50%;margin:4px;" alt="skchr"/></a> <a href="https://github.com/vaishnav-sabari-girish"><img src="https://github.com/vaishnav-sabari-girish.png?size=80" width="50" height="50" style="border-radius:50%;margin:4px;" alt="vaishnav-sabari-girish"/></a>
+  <a href="https://github.com/prjctimg"><img src="https://github.com/prjctimg.png?size=80" width="50" height="50" style="border-radius:50%;margin:4px;" alt="prjctimg"/></a> <a href="https://github.com/vaishnav-sabari-girish"><img src="https://github.com/vaishnav-sabari-girish.png?size=80" width="50" height="50" style="border-radius:50%;margin:4px;" alt="vaishnav-sabari-girish"/></a>
 </p>
 <!-- /CONTRIBUTORS -->
 
