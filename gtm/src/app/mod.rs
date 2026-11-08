@@ -537,6 +537,9 @@ pub struct App {
     pub cover_cache_bytes: u64,
     /// Whether to automatically fetch lyrics on track change
     pub auto_fetch_lyrics: bool,
+    /// Whether the equalizer follows the track: genre-named preset, or the
+    /// speech preset for podcast sources. Config `context_aware_eq`.
+    pub context_aware_eq: bool,
     /// Icon style for command palette: "mdi" (Material Design Icons) or "emoji"
     pub icon_style: String,
     pub yt_search_loading: bool,
@@ -1608,6 +1611,7 @@ impl App {
             discord_id: prefs.discord_id.clone(),
             cover_cache_bytes: 0,
             auto_fetch_lyrics: prefs.auto_fetch_lyrics,
+            context_aware_eq: prefs.context_aware_eq,
             icon_style: prefs.icon_style.clone(),
             pending_delete: None,
             pending_prompt: None,
@@ -1627,6 +1631,7 @@ impl App {
                 image: None,
                 track_id: None,
                 track_path: None,
+                fetched_for: None,
                 picker: None,
                 stateful: None,
                 pending_gen: None,

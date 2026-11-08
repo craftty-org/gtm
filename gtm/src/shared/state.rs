@@ -465,6 +465,59 @@ impl EqPreset {
         let max_boost = self.to_gains().iter().copied().fold(0.0f32, f32::max);
         -max_boost
     }
+
+    /// The preset named `s`, exactly as spelled on the wire (`hip_hop`) or as
+    /// its display label (`Hip-Hop`). Returns `None` for an unknown name, so
+    /// a genre no preset covers leaves the current curve alone.
+    pub fn from_name(s: &str) -> Option<Self> {
+        let key = s
+            .trim()
+            .to_ascii_lowercase()
+            .replace([' ', '-'], "_");
+        match key.as_str() {
+            "flat" => Some(Self::Flat),
+            "normal" => Some(Self::Normal),
+            "pop" => Some(Self::Pop),
+            "rock" => Some(Self::Rock),
+            "jazz" => Some(Self::Jazz),
+            "classical" => Some(Self::Classical),
+            "bass" | "bass_boost" => Some(Self::Bass),
+            "vocal" => Some(Self::Vocal),
+            "electronic" => Some(Self::Electronic),
+            "hip_hop" | "hiphop" => Some(Self::HipHop),
+            "latin" => Some(Self::Latin),
+            "acoustic" => Some(Self::Acoustic),
+            "podcast" => Some(Self::Podcast),
+            "dance" => Some(Self::Dance),
+            "headphones" => Some(Self::Headphones),
+            "speaker" => Some(Self::Speaker),
+            _ => None,
+        }
+    }
+
+    /// The preset a track's `genre` field names, or `None` for no genre and
+    /// for genres with no curve of their own. Matched case-insensitively with
+    /// punctuation folded, so `Hip-Hop` and `hip hop` both land on HipHop.
+    /// Multi-valued tags (`Rock/pop`, `Jazz; Fusion`) resolve to the first
+    /// value that has a preset: the lead genre is the primary one.
+    pub fn from_genre(genre: &str) -> Option<Self> {
+        for part in genre.split(['/', ';', ',', '|']) {
+            if let Some(p) = Self::from_name(part) {
+                return Some(p);
+            }
+        }
+        None
+    }
+
+    /// The preset a playback `source` (one of the `SRC_*` values) calls for.
+    /// Podcasts are speech: `Podcast` exists for exactly that. Sources with
+    /// no speech curve return `None` and leave the user's preset in place.
+    pub fn from_source(source: &str) -> Option<Self> {
+        match source {
+            crate::shared::SRC_PODCAST => Some(Self::Podcast),
+            _ => None,
+        }
+    }
 }
 
 /// Image data parsed from metadata or API call

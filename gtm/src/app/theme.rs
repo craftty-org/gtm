@@ -67,6 +67,7 @@ impl App {
             cover_provider: self.cover_provider.clone(),
             discord_id: self.discord_id.clone(),
             auto_fetch_lyrics: self.auto_fetch_lyrics,
+            context_aware_eq: self.context_aware_eq,
             icon_style: self.icon_style.clone(),
             hide_footer: self.hide_footer,
             left_pane_lists: self.left_pane_lists.clone(),

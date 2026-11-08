@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.97] - 2026-11-08
+
+### Added
+- **Context-aware equalizer (`context_aware_eq` config option, off by
+  default).** On a track change the equalizer switches to the preset the
+  track's genre names (`rock` → Rock, `hip-hop` → Hip-Hop, …), and a podcast
+  episode gets the speech `Podcast` preset via its playback source. Genres
+  with no preset and a user's `Custom` curve are left untouched; source
+  wins over genre.
+
+### Fixed
+- **Infinite refresh in the content pane and cover widgets.** The
+  now-playing cover fetch is latched per path (hit or miss) instead of
+  restaging every frame, cover cache hits only mark dirty on a real change,
+  and the 1-second periodic snapshot no longer triggers a full widget
+  sweep on every tick.
+
 ## [Unreleased]
 
 ### Added
@@ -211,7 +228,7 @@
 - **Lyric auto-follow freeze**: manual lyric scrolling no longer leaves the highlight frozen for the rest of the track: auto-follow resumes once playback catches up to the scrolled line, and a tab switch clears the latch
 - **Tab pane focus cycling**: Tab/Shift-Tab now cycles pane focus through the lyrics pane on the Library tab (previously only the library/settings panes), with focus state reset on tab switches
 - **Active tab highlight**: the active tab now uses selection foreground/background colors in both the Classic and Modern designs
-- Stale `dist/gtmd.spec` URL (`skchr/gtm-rs` → `prjctimg/gtm.rs`) and version
+- Stale `dist/gtmd.spec` URL (`skchr/gtm-rs` → `craftty-org/gtm`) and version
 
 ## [0.1.4] – 2026-08-09
 
@@ -234,7 +251,7 @@
 ### Added
 - **Release pipeline fixes**: Termux builds now compile `termux-elf-cleaner` from source; Termux `.deb` built via `termux-create-package` manifest; TUI-only archives (`gtm-*.tar.gz`) published; `nightly` prerelease trigger (force-tagged `nightly`)
 - **install.sh**: added `--deb`/`--type deb` path for Debian/Ubuntu and Termux; fixed version detection and latest-tag resolution (prerelease-aware)
-- **Wiki**: moved to a dedicated wiki repository (https://github.com/prjctimg/gtm.rs/wiki)
+- **Wiki**: moved to a dedicated wiki repository (https://github.com/craftty-org/gtm/wiki)
 
 ## [0.1.0] – 2025-07-10
 

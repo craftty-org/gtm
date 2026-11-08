@@ -1963,7 +1963,7 @@ dependencies = [
 
 [[package]]
 name = "gtm"
-version = "0.2.96"
+version = "0.2.97"
 dependencies = [
  "async-trait",
  "base64",
@@ -2026,7 +2026,7 @@ dependencies = [
 
 [[package]]
 name = "gtmd"
-version = "0.2.96"
+version = "0.2.97"
 dependencies = [
  "async-trait",
  "base64",

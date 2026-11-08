@@ -133,11 +133,20 @@ impl App {
         if self.np_cover.pending_gen.is_some() {
             return;
         }
+        // Latched after one staged fetch for this path, hit or miss. This
+        // runs every frame; without the latch each reply cleared the slot and
+        // the next frame staged another request, setting `cover_art_dirty`
+        // per reply and holding the content pane and cover widgets in a
+        // permanent repaint.
+        if self.np_cover.fetched_for.as_deref() == Some(track.path.as_str()) {
+            return;
+        }
         // The identity of the request belongs to the request, not to the caller.
         // The reply handler drops anything whose path no longer matches, so the
         // two fields are set here for every caller, entering Zen included.
         self.np_cover.track_id = Some(tid);
         self.np_cover.track_path = Some(track.path.clone());
+        self.np_cover.fetched_for = Some(track.path.clone());
         let fetch_gen = cover_gen();
         self.np_cover.pending_gen = Some(fetch_gen);
         // One request, the same one every other surface makes: by library id
@@ -397,9 +406,15 @@ impl App {
         // scroll back onto it does not blank while a fresh request is in
         // flight. Mirrors the url cache hit in `fetch_url_cover`.
         if let Some(bytes) = self.cached_track(tid) {
+            // Only mark dirty on a real change: this runs on every popup
+            // refresh for the same row, and an unconditional mark repaints
+            // the content pane and cover widgets for no change.
+            let changed = self.track_popup_cover.as_deref() != Some(bytes.as_slice());
             self.track_popup_cover = Some(bytes);
             self.popup_cover_sync();
-            self.cover_art_dirty = true;
+            if changed {
+                self.cover_art_dirty = true;
+            }
             self.popup_slot.clear();
             return;
         }
@@ -588,9 +603,12 @@ impl App {
         // request, and a miss re-fetches, so a url whose image failed is not
         // memoised as a hit.
         if let Some(bytes) = self.cached_url(&url) {
+            let changed = self.track_popup_cover.as_deref() != Some(bytes.as_slice());
             self.track_popup_cover = Some(bytes);
             self.popup_cover_sync();
-            self.cover_art_dirty = true;
+            if changed {
+                self.cover_art_dirty = true;
+            }
             return;
         }
         // One in flight per url, like every other cover: without this a cursor

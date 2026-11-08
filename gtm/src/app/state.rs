@@ -135,6 +135,14 @@ pub struct NowPlayingCoverState {
     pub image: Option<Vec<u8>>,
     pub track_id: Option<i64>,
     pub track_path: Option<String>,
+    /// Path the last cover fetch was staged for. A completed fetch (hit *or*
+    /// miss) is latched by this, so the per-frame `fetch_np_cover` call in
+    /// the run loop stages one request per track instead of one per frame:
+    /// without it every reply cleared the slot and the next frame staged
+    /// another, each setting `cover_art_dirty` and repainting the content
+    /// pane and cover widgets forever. Cleared when a different track's
+    /// fetch is staged, and on live-title advances (same path, new song).
+    pub fetched_for: Option<String>,
     pub picker: Option<Picker>,
     pub stateful: Option<StatefulProtocol>,
     pub pending_gen: Option<u64>,

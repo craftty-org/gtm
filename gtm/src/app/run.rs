@@ -813,6 +813,10 @@ impl App {
                     // because `id == 0` is shared by every provider row.
                     self.np_cover.track_id = current_tid;
                     self.np_cover.track_path = cur_path.clone();
+                    // Release the one-fetch latch so the restage below, and a
+                    // live-title advance on an unchanged path, actually stage
+                    // instead of seeing the previous track's fetch as done.
+                    self.np_cover.fetched_for = None;
                     self.np_cover.pending_gen = None;
                     self.cover_anim_started = Some(std::time::Instant::now());
                     // The `fetch_np_cover` above staged nothing when a different
@@ -852,6 +856,22 @@ impl App {
                     // the previous one.
                     self.invalidate_lyrics();
                 }
+                // Context-aware EQ: source wins (a podcast episode is speech
+                // whatever its genre tag says), genre second. No match leaves
+                // the user's preset alone; a Custom curve is never clobbered,
+                // since it is the user's own tuning rather than a preset.
+                if track_changed && self.context_aware_eq
+                    && let Some(track) = self.state.current_track.clone()
+                {
+                    let want = EqPreset::from_source(&self.state.source)
+                        .or_else(|| EqPreset::from_genre(&track.genre));
+                    if let Some(preset) = want
+                        && !matches!(self.state.audio.eq_preset, EqPreset::Custom(_))
+                        && preset != self.state.audio.eq_preset
+                    {
+                        self.send_high(TuiCommand::SetEqPreset(preset));
+                    }
+                }
             }
 
             while let Ok(result) = self.ipc_rx.try_recv() {
@@ -880,10 +900,15 @@ impl App {
                         if state.version >= self.state.version || restarted || track_differs {
                             self.state = *state;
                             self.client.seed_clock(&self.state).await;
-                            // The snapshot replaced the mirror wholesale, so
-                            // every `prev_*` tracker is suspect: sweep rather
-                            // than trust field-by-field reconciliation.
-                            self.request_full_sync();
+                            // A full widget sweep is owed only when the mirror
+                            // cannot be reconciled field-by-field: a restart or
+                            // a track the mirror never saw. The 1-second
+                            // periodic snapshot arrives near-continuously;
+                            // sweeping on every one retriggers the content
+                            // pane animation each second for no change.
+                            if restarted || track_differs {
+                                self.request_full_sync();
+                            }
                             // Re-render so the initial state (or any daemon-side
                             // refresh) paints immediately instead of waiting for
                             // the next keypress or animation trigger.
@@ -915,6 +940,9 @@ impl App {
                                         self.np_cover.image.as_deref() != Some(c.as_slice());
                                     self.np_cover.image = Some(c);
                                     self.np_cover.track_id = cover_tid;
+                                    if cur_path.is_some() {
+                                        self.np_cover.fetched_for = cur_path;
+                                    }
                                     if changed {
                                         self.cover_anim_started = Some(std::time::Instant::now());
                                     }

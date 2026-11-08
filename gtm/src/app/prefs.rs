@@ -113,6 +113,14 @@ pub struct Prefs {
     pub(crate) discord_id: Option<String>,
     #[serde(default = "default_fetch_lyrics")]
     pub(crate) auto_fetch_lyrics: bool,
+    /// Context-aware EQ: on a track change, switch the equalizer to the preset
+    /// the track's genre names, or — for a podcast episode — the speech
+    /// preset, when the playback source is a podcast. Off by default: an
+    /// automatic curve change is the kind of thing to opt into, and a config
+    /// written before this key has no opinion so it must not re-curve audio
+    /// the user tuned by hand.
+    #[serde(default)]
+    pub(crate) context_aware_eq: bool,
     #[serde(default = "default_icon_style")]
     pub(crate) icon_style: String,
     #[serde(default)]
@@ -285,6 +293,7 @@ impl Default for Prefs {
             cover_provider: default_cover_provider(),
             discord_id: None,
             auto_fetch_lyrics: default_fetch_lyrics(),
+            context_aware_eq: false,
             icon_style: default_icon_style(),
             hide_footer: false,
             left_pane_lists: left_pane_defaults(),
