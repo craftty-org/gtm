@@ -860,7 +860,8 @@ impl App {
                 // whatever its genre tag says), genre second. No match leaves
                 // the user's preset alone; a Custom curve is never clobbered,
                 // since it is the user's own tuning rather than a preset.
-                if track_changed && self.context_aware_eq
+                if track_changed
+                    && self.context_aware_eq
                     && let Some(track) = self.state.current_track.clone()
                 {
                     let want = EqPreset::from_source(&self.state.source)

@@ -470,10 +470,7 @@ impl EqPreset {
     /// its display label (`Hip-Hop`). Returns `None` for an unknown name, so
     /// a genre no preset covers leaves the current curve alone.
     pub fn from_name(s: &str) -> Option<Self> {
-        let key = s
-            .trim()
-            .to_ascii_lowercase()
-            .replace([' ', '-'], "_");
+        let key = s.trim().to_ascii_lowercase().replace([' ', '-'], "_");
         match key.as_str() {
             "flat" => Some(Self::Flat),
             "normal" => Some(Self::Normal),
