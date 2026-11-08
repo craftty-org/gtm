@@ -47,7 +47,10 @@ for crate in "${CRATES[@]}"; do
   published=0
   for attempt in 1 2 3 4 5 6; do
     set +e
-    out="$(cargo publish --locked ${DRY_RUN} -p "${crate}" 2>&1)"
+    # No `--locked`: the lockfile in git is only a record for builds; getting
+    # it byte-exact by hand is what publish needs to not be blocked on, and
+    # cargo regenerates it from the manifests on the runner.
+    out="$(cargo publish ${DRY_RUN} -p "${crate}" 2>&1)"
     status=$?
     set -e
     if [ "${status}" -eq 0 ]; then
