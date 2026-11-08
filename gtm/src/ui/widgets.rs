@@ -1,17 +1,21 @@
 // Copyright (c) 2026
 // Author: prjctimg <prjctimg@outlook.com>
-// Shared layout, colour and scrolling primitives.
+// Shared layout, colour and scrolling primitives
 //
-// Generic math (easing, viewport, marquee) now lives in `tuikit::widgets`;
-// this module keeps gtm-specific rendering helpers and re-exports those
-// generic utilities under their established local names.
 //
 // This is free software released under the GPL-3.0 license.
 
 use crate::ui::*;
 
-pub(crate) use tuikit::widgets::textfx::{cubic_ease_in, cubic_ease_out};
-pub(crate) use tuikit::widgets::viewport::{ListRows, step_viewport};
+pub(crate) fn cubic_ease_out(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    1.0 - (1.0 - t).powi(3)
+}
+
+pub(crate) fn cubic_ease_in(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * t
+}
 
 pub(crate) fn dim_color(c: Color) -> Color {
     match c {
@@ -92,6 +96,75 @@ pub(crate) fn cursor_span_style(app: &App) -> Option<Style> {
             .fg(app.theme.selection_fg_readable())
             .bg(bg),
     )
+}
+
+/// The rendered rows of a main-pane list, mapped back to the indexes its
+/// cursor uses.
+///
+/// A list can draw fixed rows above its scrollable items — the Spotify
+/// playlist view puts Play All and Shuffle there — and those rows belong to
+/// the same cursor space even though they never scroll. Deriving click
+/// targets from `scroll + screen row` is wrong as soon as a prefix exists:
+/// every click lands one or two tracks too far down, and the last rows have
+/// no zone at all. Both the renderer and the mouse map therefore build this
+/// one description of what is on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ListRows {
+    /// Fixed rows above the scrolling items, counted in cursor space.
+    pub(crate) action_rows: usize,
+    /// First scrolling item's absolute index.
+    pub(crate) scroll: usize,
+    /// Number of scrolling items on screen.
+    pub(crate) len: usize,
+}
+
+impl ListRows {
+    pub(crate) fn new(action_rows: usize, scroll: usize, len: usize) -> Self {
+        Self {
+            action_rows,
+            scroll,
+            len,
+        }
+    }
+
+    /// `(screen y, absolute item index)` for every row that fits.
+    ///
+    /// `first_y` is the first row below the list's leading blank line and
+    /// `capacity` is how many rows that pane can draw.
+    pub(crate) fn entries(self, first_y: u16, capacity: usize) -> Vec<(u16, usize)> {
+        let actions = self.action_rows.min(capacity);
+        let tracks = self.len.min(capacity.saturating_sub(actions));
+        let mut rows = Vec::with_capacity(actions + tracks);
+        for offset in 0..actions {
+            rows.push((first_y.saturating_add(offset as u16), offset));
+        }
+        for offset in 0..tracks {
+            rows.push((
+                first_y.saturating_add((actions + offset) as u16),
+                self.action_rows + self.scroll + offset,
+            ));
+        }
+        rows
+    }
+}
+
+pub(crate) fn step_viewport(
+    offset: usize,
+    sel: usize,
+    visible: usize,
+    total: usize,
+) -> (usize, usize) {
+    if total <= visible || visible == 0 {
+        return (0, total);
+    }
+    let max_start = total - visible;
+    let mut o = offset.min(max_start);
+    if sel < o {
+        o = sel;
+    } else if sel >= o + visible {
+        o = (sel + 1).saturating_sub(visible).min(max_start);
+    }
+    (o, (o + visible).min(total))
 }
 
 pub(crate) fn fill_pane(f: &mut ratatui::Frame, area: Rect, app: &App) {

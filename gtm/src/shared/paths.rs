@@ -11,7 +11,7 @@ use std::process::Command;
 ///
 /// Termux sets `$PREFIX` (always) and `$TERMUX_VERSION` (on newer versions).
 pub fn is_termux() -> bool {
-    tuikit::paths::is_termux()
+    std::env::var("PREFIX").is_ok() || std::env::var("TERMUX_VERSION").is_ok()
 }
 
 /// Return the state directory for runtime files (sockets, PID).
