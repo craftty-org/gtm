@@ -23,12 +23,19 @@ sudo make install
 pkg install rust clang pkg-config pulseaudio make
 # optional: termux-setup-storage for /sdcard/Music access
 
-# build.rs auto-detects Termux; `make termux` (or `make deb-termux` for a
-# .deb) enables the PulseAudio backend automatically.
-make termux
+# Defaults are minimal to avoid dependencies unsupported on Android/Termux
+# (e.g. rquickjs/innertube-rs via the `youtube` feature). Build with PulseAudio:
+cargo build --release -p gtm --features pulseaudio
+cargo build --release -p gtmd --features pulseaudio
+```
 
-# manual equivalent for a plain build:
-#   cargo build --release --features pulseaudio
+Cross-compiling from Linux still uses `cargo-ndk` (see `make termux`):
+
+```bash
+cargo install cargo-ndk
+# NDK r27b via nttld/setup-ndk@v1 or $ANDROID_NDK_HOME
+make termux          # CARGO_TARGET_*_LINKER is injected by cargo-ndk
+make termux-elf
 ```
 
 At runtime `gtmd` auto-selects the PulseAudio backend on Termux and

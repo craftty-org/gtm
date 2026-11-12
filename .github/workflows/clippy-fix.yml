@@ -28,14 +28,14 @@ jobs:
       - name: Install ALSA headers (Linux)
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - name: Apply clippy auto-fixes
-        run: cargo clippy --fix --workspace --allow-dirty --all-targets
+        run: cargo clippy --fix --workspace --allow-dirty --all-targets --features gtm/mpris,gtmd/mpris,gtmd/youtube
       - name: Normalize formatting of auto-fixes
         run: cargo fmt
       - name: Format
         run: cargo fmt --check
       - name: Verify with cargo check
         id: verify
-        run: cargo check --workspace
+        run: cargo check --workspace --features gtm/mpris,gtmd/mpris,gtmd/youtube
       - name: Commit and auto-merge fixes
         if: success()
         shell: bash

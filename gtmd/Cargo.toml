@@ -16,7 +16,11 @@ readme = "README.md"
 # depends on `gtmd` — the TUI/CLI talks to the daemon exclusively over the
 # Unix-socket IPC protocol in `gtm::shared::ipc`.
 [features]
-default = ["mpris", "youtube"]
+# Defaults are intentionally minimal to avoid pulling in dependencies that are
+# broken or unnecessary on Android/Termux (e.g. rquickjs has no bindings for
+# aarch64-linux-android). Enable features explicitly (e.g. `pulseaudio`,
+# `mpris`, `youtube`) as needed.
+default = []
 # MPRIS D-Bus integration for the currently playing track (uses gtm's mpris module).
 mpris = ["gtm/mpris"]
 # YouTube search/stream resolution for free-tier Spotify playback (embeds

@@ -328,7 +328,7 @@ jobs:
 
       - name: Build release binaries
         if: matrix.family != 'android' && matrix.family != 'musl' && matrix.family != 'arch-arm'
-        run: cargo build --release
+        run: cargo build --release -p gtm --features mpris && cargo build --release -p gtmd --features mpris,youtube
 
       - name: Assert glibc compatibility (<= 2.36)
         if: matrix.family == 'debian'
@@ -376,7 +376,8 @@ jobs:
         # copies this directory, so skipping it left the copy with nothing.
         if: matrix.family != 'musl' && matrix.family != 'arch-arm'
         run: |
-          cargo build --release --quiet
+          cargo build --release --quiet -p gtm --features mpris
+          cargo build --release --quiet -p gtmd --features mpris,youtube
           ./scripts/build/completions.sh "$(pwd)/artifacts"
 
       - name: Package complete archive (desktop)

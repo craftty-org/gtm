@@ -28,11 +28,11 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - run: cargo fmt --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets --features gtm/mpris,gtmd/mpris,gtmd/youtube -- -D warnings
       # `--no-fail-fast`: without it cargo stops at the first failing target, so
       # a red test in `gtm` hid every failure in `gtmd` behind it and the job
       # looked like one broken test rather than a backlog.
-      - run: cargo test --workspace --no-fail-fast
+      - run: cargo test --workspace --no-fail-fast --features gtm/mpris,gtmd/mpris,gtmd/youtube
 
   # The PulseAudio backend, compiled by the release job and by nothing else.
   #
@@ -55,5 +55,5 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install ALSA headers (Linux)
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-      - run: cargo clippy --workspace --all-targets --features pulseaudio -- -D warnings
-      - run: cargo test --workspace --features pulseaudio --no-fail-fast
+      - run: cargo clippy --workspace --all-targets --features gtm/mpris,gtm/pulseaudio,gtmd/mpris,gtmd/youtube,gtmd/pulseaudio -- -D warnings
+      - run: cargo test --workspace --features pulseaudio,gtm/mpris,gtmd/mpris,gtmd/youtube --no-fail-fast

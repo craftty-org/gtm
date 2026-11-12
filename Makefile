@@ -35,17 +35,19 @@ VERSION := $(shell cargo metadata --format-version=1 2>/dev/null | jq -r '.packa
 .PHONY: all release test check clean deb man completions install rpm termux termux-elf termux-clean deb-termux
 
 all:
-	cargo build
+	cargo build -p gtm --features mpris
+	cargo build -p gtmd --features mpris,youtube
 
 release:
-	cargo build --release
+	cargo build --release -p gtm --features mpris
+	cargo build --release -p gtmd --features mpris,youtube
 
 test:
-	cargo test --workspace
+	cargo test --workspace --features gtm/mpris,gtmd/mpris,gtmd/youtube
 
 check:
-	cargo check --workspace
-	cargo clippy --workspace -- -D warnings
+	cargo check --workspace --features gtm/mpris,gtmd/mpris,gtmd/youtube
+	cargo clippy --workspace --features gtm/mpris,gtmd/mpris,gtmd/youtube -- -D warnings
 
 clean:
 	cargo clean

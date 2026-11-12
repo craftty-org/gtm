@@ -17,10 +17,12 @@ apk add --no-cache \
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
 export PATH="$HOME/.cargo/bin:$PATH"
 
-cargo build --release
+cargo build --release -p gtm --features mpris
+cargo build --release -p gtmd --features mpris,youtube
 
 ./scripts/build/manpages.sh artifacts
-cargo build --release --quiet
+cargo build --release -p gtm --features mpris
+cargo build --release -p gtmd --features mpris,youtube --quiet
 ./scripts/build/completions.sh "$(pwd)/artifacts"
 
 root="gtm-${platform}"

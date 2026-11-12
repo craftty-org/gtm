@@ -11,7 +11,10 @@ categories.workspace = true
 readme = "README.md"
 
 [features]
-default = ["mpris"]
+# Defaults are intentionally minimal to avoid pulling in dependencies that are
+# broken or unnecessary on Android/Termux. Enable features explicitly
+# (e.g. `pulseaudio`, `mpris`) as needed.
+default = []
 # MPRIS D-Bus integration (consumed by the gtmd daemon crate via gtmd/mpris).
 mpris = ["dep:zbus", "dep:zvariant"]
 # PulseAudio output backend (consumed by the gtmd daemon crate via

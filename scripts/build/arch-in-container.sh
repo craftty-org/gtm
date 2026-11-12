@@ -39,10 +39,12 @@ retry "pacman database sync" pacman -Syu --noconfirm
 # shellcheck disable=SC2086
 retry "pacman install" pacman -S --noconfirm --needed $PACMAN_PACKAGES
 
-cargo build --release
+cargo build --release -p gtm --features mpris
+cargo build --release -p gtmd --features mpris,youtube
 
 ./scripts/build/manpages.sh artifacts
-cargo build --release --quiet
+cargo build --release -p gtm --features mpris
+cargo build --release -p gtmd --features mpris,youtube --quiet
 ./scripts/build/completions.sh "$(pwd)/artifacts"
 
 root="gtm-arch-${arch}"
