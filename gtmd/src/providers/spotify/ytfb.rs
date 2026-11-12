@@ -4,7 +4,9 @@
 //
 // This is free software released under the GPL-3.0 license.
 
-use crate::daemon::{Daemon, DaemonInner};
+use crate::daemon::DaemonInner;
+#[cfg(feature = "youtube")]
+use crate::daemon::Daemon;
 
 /// Shared YouTube-fallback path for Spotify tracks: search `query`, pick the
 /// top hit, and download its audio into the cache under `cache_key` via

@@ -1,3 +1,4 @@
+#[cfg(feature = "youtube")]
 use super::*;
 
 #[cfg(feature = "youtube")]

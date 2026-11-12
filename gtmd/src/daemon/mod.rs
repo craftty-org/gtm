@@ -28,8 +28,9 @@ use gtm::audio::{AudioError, AudioEvent, AudioMixer, AudioResult, Mixer, NullMix
 use gtm::mpris::{MprisHandle, start};
 use gtm::shared::global::{
     DaemonState, EQ_PRESETS, EqPreset, PlaybackStatus, RepeatMode, ReverbConfig, SavedState,
-    YTFilter,
 };
+#[cfg(feature = "youtube")]
+use gtm::shared::global::YTFilter;
 use gtm::shared::ipc::{
     CacheKind, ComponentHealth, DaemonEvent, DaemonReq, DaemonRes, HealthReport, HealthStatus,
     LibraryAction, PlaylistAction, QueueAction, SyncKind, WireReq,
@@ -114,6 +115,7 @@ pub(crate) use radio::*;
 pub(crate) use scrobble::*;
 pub(crate) use search::*;
 pub(crate) use stream::*;
+#[cfg(feature = "youtube")]
 pub(crate) use yt::*;
 
 // The Spotify command handlers live with the rest of the integration.
@@ -917,6 +919,7 @@ impl Cmd {
     /// duration from a probe of the resolved stream when it can be read cheaply.
     /// Duration is what turns a URL row into a track row: without it the pane
     /// has no progress bar and `is_live_stream` has nothing to contradict.
+    #[cfg(feature = "youtube")]
     fn label_ytdlp_row(url: &str, title: &str, label: &str) -> (String, String, String, f64) {
         // `decode_file` hands back the decoded source, whose `total_duration` is
         // the length of the *stream*, not the track: a radio stream reports none
@@ -3464,29 +3467,25 @@ impl Daemon {
             DaemonReq::YtSearch { .. } | DaemonReq::YtSearchPoll => Err(CoreError::Daemon(
                 "youtube support is disabled in this build".into(),
             )),
+            #[cfg(feature = "youtube")]
             DaemonReq::YtDownload {
                 url,
                 title,
                 channel,
             } => {
-                #[cfg(feature = "youtube")]
-                {
-                    let mut yt = inner.youtube.lock().await;
-                    let artist = channel.clone();
-                    match yt.download(url.clone(), title.clone(), artist).await {
-                        Ok(id) => Ok(DaemonRes::Value {
-                            value: serde_json::json!({ "id": id }),
-                        }),
-                        Err(e) => Err(CoreError::Daemon(e)),
-                    }
-                }
-                #[cfg(not(feature = "youtube"))]
-                {
-                    Err(CoreError::Daemon(
-                        "youtube support is disabled in this build".into(),
-                    ))
+                let mut yt = inner.youtube.lock().await;
+                let artist = channel.clone();
+                match yt.download(url.clone(), title.clone(), artist).await {
+                    Ok(id) => Ok(DaemonRes::Value {
+                        value: serde_json::json!({ "id": id }),
+                    }),
+                    Err(e) => Err(CoreError::Daemon(e)),
                 }
             }
+            #[cfg(not(feature = "youtube"))]
+            DaemonReq::YtDownload { .. } => Err(CoreError::Daemon(
+                "youtube support is disabled in this build".into(),
+            )),
             DaemonReq::YtDownloadPoll => {
                 #[cfg(feature = "youtube")]
                 {
