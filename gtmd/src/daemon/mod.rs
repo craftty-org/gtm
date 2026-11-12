@@ -26,11 +26,11 @@ use gtm::audio::symphonia::StreamingReopen;
 use gtm::audio::{AudioError, AudioEvent, AudioMixer, AudioResult, Mixer, NullMixer};
 #[cfg(feature = "mpris")]
 use gtm::mpris::{MprisHandle, start};
+#[cfg(feature = "youtube")]
+use gtm::shared::global::YTFilter;
 use gtm::shared::global::{
     DaemonState, EQ_PRESETS, EqPreset, PlaybackStatus, RepeatMode, ReverbConfig, SavedState,
 };
-#[cfg(feature = "youtube")]
-use gtm::shared::global::YTFilter;
 use gtm::shared::ipc::{
     CacheKind, ComponentHealth, DaemonEvent, DaemonReq, DaemonRes, HealthReport, HealthStatus,
     LibraryAction, PlaylistAction, QueueAction, SyncKind, WireReq,
