@@ -398,9 +398,15 @@ fn format_status(state: &crate::shared::global::DaemonState) -> String {
             }
         })
         .unwrap_or_else(|| "No track".into());
+    let cover_line = state
+        .current_track
+        .as_ref()
+        .map(|t| t.cover_path.clone().unwrap_or_else(|| "none".into()))
+        .unwrap_or_else(|| "no track".into());
     format!(
         "\x1b[1mPlayback:\x1b[0m  {status_str}\n\
          \x1b[1mTrack:\x1b[0m    {track_str}\n\
+         \x1b[1mCover:\x1b[0m    {cover_line}\n\
          \x1b[1mVolume:\x1b[0m   \x1b[36m{}%\x1b[0m ({})\n\
          \x1b[1mRepeat:\x1b[0m   {:?}\n\
          \x1b[1mShuffle:\x1b[0m  {}\n\
