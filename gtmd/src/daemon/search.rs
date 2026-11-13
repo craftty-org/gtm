@@ -7,7 +7,7 @@ impl Search {
         let query = query.to_string();
         let data_dir = inner.config.data_dir.clone();
         let result = tokio::task::spawn_blocking(move || {
-            let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+            let lib = Library::open(&data_dir)?;
             lib.search_tracks(&query)
         })
         .await

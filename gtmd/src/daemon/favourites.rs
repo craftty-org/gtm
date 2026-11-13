@@ -6,7 +6,7 @@ impl Favourites {
     pub async fn list(inner: &DaemonInner) -> Result<DaemonRes, CoreError> {
         let data_dir = inner.config.data_dir.clone();
         let result = tokio::task::spawn_blocking(move || {
-            let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+            let lib = Library::open(&data_dir)?;
             lib.get_favourites()
         })
         .await
@@ -27,7 +27,7 @@ impl Favourites {
         let data_dir = inner.config.data_dir.clone();
         let track = track.clone();
         let result = tokio::task::spawn_blocking(move || {
-            let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+            let lib = Library::open(&data_dir)?;
             lib.toggle_fav_path(&track)
         })
         .await
@@ -43,7 +43,7 @@ impl Favourites {
     pub async fn add(inner: &DaemonInner, track_id: i64) -> Result<DaemonRes, CoreError> {
         let data_dir = inner.config.data_dir.clone();
         let result = tokio::task::spawn_blocking(move || {
-            let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+            let lib = Library::open(&data_dir)?;
             lib.toggle_favourite(track_id)
         })
         .await
@@ -57,7 +57,7 @@ impl Favourites {
     pub async fn remove(inner: &DaemonInner, track_id: i64) -> Result<DaemonRes, CoreError> {
         let data_dir = inner.config.data_dir.clone();
         let result = tokio::task::spawn_blocking(move || {
-            let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+            let lib = Library::open(&data_dir)?;
             lib.toggle_favourite(track_id)
         })
         .await

@@ -13,7 +13,7 @@ impl LibraryHandler {
                 let data_dir = inner.config.data_dir.clone();
                 let cache_dir = inner.config.cache_dir.to_string_lossy().to_string();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.scan_directory(&audio_dir, true, Some(&cache_dir))
                 })
                 .await
@@ -28,7 +28,7 @@ impl LibraryHandler {
             LibraryAction::GetTracks { filter: _, sort: _ } => {
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.list_tracks()
                 })
                 .await
@@ -44,7 +44,7 @@ impl LibraryHandler {
                 let limit = *limit;
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.list_most_played(limit)
                 })
                 .await
@@ -60,7 +60,7 @@ impl LibraryHandler {
                 let limit = *limit;
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.list_recently_played(limit)
                 })
                 .await
@@ -76,7 +76,7 @@ impl LibraryHandler {
                 let limit = *limit;
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.list_recently_added(limit)
                 })
                 .await
@@ -91,7 +91,7 @@ impl LibraryHandler {
             LibraryAction::GetPlaylists => {
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.get_playlists()
                 })
                 .await
@@ -105,7 +105,7 @@ impl LibraryHandler {
                 let data_dir = inner.config.data_dir.clone();
                 let pid = *id;
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.get_playlist_tracks(pid)
                 })
                 .await
@@ -121,7 +121,7 @@ impl LibraryHandler {
                 let name = name.clone();
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.create_playlist(&name)
                 })
                 .await
@@ -139,7 +139,7 @@ impl LibraryHandler {
                 let name = name.trim().to_string();
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.rename_playlist(id, &name).map(|_| ())
                 })
                 .await
@@ -153,7 +153,7 @@ impl LibraryHandler {
                 let id = *id;
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.delete_playlist(id)
                 })
                 .await
@@ -171,7 +171,7 @@ impl LibraryHandler {
                 let track_ids = track_ids.clone();
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     for tid in &track_ids {
                         lib.add_to_playlist(playlist_id, *tid)?;
                     }
@@ -189,7 +189,7 @@ impl LibraryHandler {
                 let format = *format;
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.import_playlist(&path, format)
                 })
                 .await
@@ -206,7 +206,7 @@ impl LibraryHandler {
                 let count = *count;
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.get_recent(count)
                 })
                 .await
@@ -238,7 +238,7 @@ impl LibraryHandler {
                 let format = *format;
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.export_playlist(playlist_id, &export_path, format)
                 })
                 .await
@@ -256,7 +256,7 @@ impl LibraryHandler {
                 let track_id = *track_id;
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.remove_from_playlist(playlist_id, track_id)
                 })
                 .await
@@ -270,7 +270,7 @@ impl LibraryHandler {
                 let playlist_id = *playlist_id;
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.playlist_dedup(playlist_id)
                 })
                 .await
@@ -286,7 +286,7 @@ impl LibraryHandler {
                 let playlist_id = *playlist_id;
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.playlist_doctor(playlist_id)
                 })
                 .await
@@ -303,7 +303,7 @@ impl LibraryHandler {
                 let field = field.clone();
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.playlist_sort(playlist_id, &field)
                 })
                 .await
@@ -319,7 +319,7 @@ impl LibraryHandler {
                 let library_dirs = inner.config.library_paths.clone();
                 let allow_delete_files = inner.config.allow_delete_files;
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.remove_track_full(id, &library_dirs, allow_delete_files)
                 })
                 .await
@@ -358,7 +358,7 @@ impl LibraryHandler {
                 let patch = patch.clone();
                 let data_dir = inner.config.data_dir.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::new(data_dir.to_str().unwrap_or(""))?;
+                    let lib = Library::open(&data_dir)?;
                     lib.update_metadata(track_id, &patch)?;
                     // Re-read the row so any queue/current tracker holding the
                     // edited path can be refreshed (Cmd::play reuses queue

@@ -27,7 +27,7 @@ impl Lyrics {
                 let resolved = if !inner.config.test_mode {
                     let data_dir = inner.config.data_dir.clone();
                     tokio::task::spawn_blocking(move || {
-                        Library::new(data_dir.to_str().unwrap_or(""))
+                        Library::open(&data_dir)
                             .ok()
                             .and_then(|lib| lib.get_track(track_id).ok().flatten())
                     })

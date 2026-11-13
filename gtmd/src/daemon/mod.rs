@@ -3175,7 +3175,7 @@ impl Daemon {
             let cache_dir_str = cache_dir.to_string_lossy().to_string();
             let total = total_tracks.clone();
             let result = tokio::task::spawn_blocking(move || {
-                let lib = match Library::new(data_dir.to_str().unwrap_or("")) {
+                let lib = match Library::open(&data_dir) {
                     Ok(l) => l,
                     Err(e) => return Err(format!("Library::new: {e}")),
                 };
@@ -4102,7 +4102,7 @@ impl Daemon {
         let data_dir = inner.config.data_dir.clone();
         let id = track.id;
         tokio::task::spawn_blocking(move || {
-            let Ok(lib) = Library::new(data_dir.to_str().unwrap_or("")) else {
+            let Ok(lib) = Library::open(&data_dir) else {
                 return;
             };
             if let Err(e) = lib.record_play(id) {
@@ -4189,7 +4189,7 @@ impl Daemon {
     async fn build_default_list(inner: &DaemonInner, resume_key: Option<&str>) -> Vec<TrackInfo> {
         let data_dir = inner.config.data_dir.clone();
         let tracks = tokio::task::spawn_blocking(move || {
-            Library::new(data_dir.to_str().unwrap_or(""))
+            Library::open(&data_dir)
                 .ok()
                 .and_then(|lib| lib.list_tracks().ok())
         })
@@ -5558,7 +5558,7 @@ fn run_covers_sync(
     progress: &SyncProgress,
 ) -> Result<(usize, usize), String> {
     let lib =
-        Library::new(data_dir.to_str().unwrap_or("")).map_err(|e| format!("open library: {e}"))?;
+        Library::open(&data_dir).map_err(|e| format!("open library: {e}"))?;
     let tracks = lib.list_tracks().map_err(|e| format!("list tracks: {e}"))?;
     let total = tracks.len();
     progress.total.store(total, Ordering::Relaxed);
@@ -5620,7 +5620,7 @@ fn run_lyrics_sync(
     progress: &SyncProgress,
 ) -> Result<(usize, usize), String> {
     let lib =
-        Library::new(data_dir.to_str().unwrap_or("")).map_err(|e| format!("open library: {e}"))?;
+        Library::open(&data_dir).map_err(|e| format!("open library: {e}"))?;
     let tracks = lib.list_tracks().map_err(|e| format!("list tracks: {e}"))?;
     let total = tracks.len();
     progress.total.store(total, Ordering::Relaxed);
@@ -5666,7 +5666,7 @@ fn run_metadata_sync(
     progress: &SyncProgress,
 ) -> Result<(usize, usize), String> {
     let lib =
-        Library::new(data_dir.to_str().unwrap_or("")).map_err(|e| format!("open library: {e}"))?;
+        Library::open(&data_dir).map_err(|e| format!("open library: {e}"))?;
     let tracks = lib.list_tracks().map_err(|e| format!("list tracks: {e}"))?;
     let total = tracks.len();
     progress.total.store(total, Ordering::Relaxed);

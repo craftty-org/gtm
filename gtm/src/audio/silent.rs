@@ -99,6 +99,15 @@ impl Mixer for NullMixer {
         Ok(())
     }
 
+    fn load_standby_reader(
+        &mut self,
+        _reader: Box<dyn std::io::Read + Send>,
+        _reopen: Option<Box<dyn StreamingReopen>>,
+    ) -> AudioResult<()> {
+        *self.standby_loaded.lock().unwrap() = true;
+        Ok(())
+    }
+
     fn standby_is_loaded(&self) -> bool {
         *self.standby_loaded.lock().unwrap()
     }

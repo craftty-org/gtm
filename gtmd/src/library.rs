@@ -85,6 +85,10 @@ static SCHEMA_DONE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashS
     std::sync::OnceLock::new();
 
 impl Library {
+    pub fn open(data_dir: &std::path::Path) -> Result<Self, String> {
+        Self::new(data_dir.to_string_lossy().as_ref())
+    }
+
     pub fn new(db_dir: &str) -> Result<Self, String> {
         let path = format!("{db_dir}/{DB_NAME}");
         let conn = Connection::open(&path).map_err(|e| format!("db open: {e}"))?;

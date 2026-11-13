@@ -777,6 +777,45 @@ impl Mixer for PulseAudioMixer {
         Ok(())
     }
 
+    fn load_standby_reader(
+        &mut self,
+        reader: Box<dyn std::io::Read + Send>,
+        reopen: Option<Box<dyn StreamingReopen>>,
+    ) -> AudioResult<()> {
+        self.standby_mut().stop_decode();
+        Self::reset_ring(self.standby());
+
+        self.standby().cork();
+        self.standby().flush();
+        Self::set_stream_volume(self.standby(), 0);
+        // Live/remote streams have no known total duration for the standby slot.
+        self.standby_duration = 0.0;
+
+        let (control, handle) = Self::start_decode_reader(
+            reader,
+            reopen,
+            &self.standby().ring,
+            &self.eq_gains,
+            &self.eq_enabled,
+            &self.pre_gain,
+            &self.reverb_enabled,
+            &self.reverb_room_size,
+            &self.spectrum,
+        )?;
+
+        let client = self._client.clone();
+        self.standby_mut().reconfigure(
+            &client,
+            control.sample_rate.load(Ordering::Relaxed),
+            control.channels.load(Ordering::Relaxed),
+        )?;
+        self.standby_mut().control = Some(control);
+        self.standby_mut().decode_handle = Some(handle);
+
+        self.standby().uncork();
+        Ok(())
+    }
+
     fn load_standby_decoded(
         &mut self,
         source: Box<dyn Source<Item = f32> + Send>,
