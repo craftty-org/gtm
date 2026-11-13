@@ -5557,8 +5557,7 @@ fn run_covers_sync(
     provider: CoverProvider,
     progress: &SyncProgress,
 ) -> Result<(usize, usize), String> {
-    let lib =
-        Library::open(&data_dir).map_err(|e| format!("open library: {e}"))?;
+    let lib = Library::open(&data_dir).map_err(|e| format!("open library: {e}"))?;
     let tracks = lib.list_tracks().map_err(|e| format!("list tracks: {e}"))?;
     let total = tracks.len();
     progress.total.store(total, Ordering::Relaxed);
@@ -5619,8 +5618,7 @@ fn run_lyrics_sync(
     lyrics_manager: Option<LyricsManager>,
     progress: &SyncProgress,
 ) -> Result<(usize, usize), String> {
-    let lib =
-        Library::open(&data_dir).map_err(|e| format!("open library: {e}"))?;
+    let lib = Library::open(&data_dir).map_err(|e| format!("open library: {e}"))?;
     let tracks = lib.list_tracks().map_err(|e| format!("list tracks: {e}"))?;
     let total = tracks.len();
     progress.total.store(total, Ordering::Relaxed);
@@ -5665,8 +5663,7 @@ fn run_metadata_sync(
     only_path: Option<String>,
     progress: &SyncProgress,
 ) -> Result<(usize, usize), String> {
-    let lib =
-        Library::open(&data_dir).map_err(|e| format!("open library: {e}"))?;
+    let lib = Library::open(&data_dir).map_err(|e| format!("open library: {e}"))?;
     let tracks = lib.list_tracks().map_err(|e| format!("list tracks: {e}"))?;
     let total = tracks.len();
     progress.total.store(total, Ordering::Relaxed);
