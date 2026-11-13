@@ -114,7 +114,7 @@ pub struct DaemonState {
     /// User-added, one-time queue entries. The currently-playing entry is at
     /// index 0 and is removed once it finishes or Next is pressed.
     pub queue: Vec<TrackInfo>,
-    pub queue_cursor: u64,
+    pub queue_cursor: u32,
     /// Default playback list (whole library sorted by title, optionally
     /// shuffled). Loaded lazily when the user queue exhausts; entries persist
     /// in the view while `default_cursor` advances through them.
@@ -537,7 +537,7 @@ pub struct SavedState {
     #[serde(default)]
     pub queue: Vec<TrackInfo>,
     #[serde(default)]
-    pub queue_cursor: u64,
+    pub queue_cursor: u32,
     #[serde(default)]
     pub volume: u8,
     #[serde(default)]
@@ -606,7 +606,7 @@ impl SavedState {
             };
         }
         state.queue = self.queue.clone();
-        state.queue_cursor = self.queue_cursor.min(state.queue.len() as u64);
+        state.queue_cursor = self.queue_cursor.min(state.queue.len() as u32);
         restore!(copy volume);
         restore!(copy repeat);
         restore!(copy shuffle);

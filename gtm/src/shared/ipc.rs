@@ -1766,8 +1766,10 @@ pub enum DaemonEvent {
     MonoChanged { enabled: bool },
     #[serde(rename = "mute_changed")]
     MuteChanged { mute: bool },
+    /// `Arc<[TrackInfo]>` avoids deep-cloning the full merged queue for every
+    /// broadcast subscriber; serde serializes it identically to a JSON array.
     #[serde(rename = "queue_changed")]
-    QueueChanged { queue: Vec<TrackInfo>, cursor: u64 },
+    QueueChanged { queue: std::sync::Arc<[TrackInfo]>, cursor: u32 },
     #[serde(rename = "repeat_mode_changed")]
     RepeatModeChanged { mode: RepeatMode },
     #[serde(rename = "shuffle_changed")]
@@ -1875,7 +1877,7 @@ pub enum DaemonRes {
     },
     QueueState {
         queue: Box<Vec<TrackInfo>>,
-        cursor: u64,
+        cursor: u32,
     },
     Status {
         state: Box<DaemonState>,
@@ -2393,7 +2395,10 @@ impl DaemonRes {
                 }
             }
             "queue" => {
-                let cursor = data.get("cursor").and_then(|c| c.as_u64()).unwrap_or(0);
+                let cursor = data
+                    .get("cursor")
+                    .and_then(|c| c.as_u64())
+                    .unwrap_or(0) as u32;
                 match serde_json::from_value::<Vec<TrackInfo>>(field(&data, "queue")) {
                     Ok(queue) => DaemonRes::QueueState {
                         queue: Box::new(queue),

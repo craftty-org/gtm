@@ -39,7 +39,7 @@ image = "0.25"
 color-thief = "0.2"
 ratatui-image = { version = "11", default-features = false, features = ["crossterm", "image-defaults"] }
 base64 = "0.22"
-serde = { version = "1", features = ["derive"] }
+serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

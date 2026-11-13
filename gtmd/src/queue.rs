@@ -108,10 +108,10 @@ pub fn resolve_track(path: &str) -> TrackInfo {
 /// remaining default list.  The cursor marks the currently-playing entry:
 /// index 0 when a user entry is playing, otherwise the position in the
 /// default list.
-pub fn visible(state: &DaemonState) -> (Vec<TrackInfo>, u64) {
+pub fn visible(state: &DaemonState) -> (Vec<TrackInfo>, u32) {
     let mut merged = state.queue.clone();
     let cursor = if state.queue.is_empty() {
-        state.default_cursor.min(state.default_list.len()) as u64
+        state.default_cursor.min(state.default_list.len()) as u32
     } else {
         0
     };

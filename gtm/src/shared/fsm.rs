@@ -276,7 +276,7 @@ impl DaemonState {
                 self.mute = *mute;
             }
             DaemonEvent::QueueChanged { queue, cursor } => {
-                self.queue = queue.clone();
+                self.queue = queue.as_ref().to_vec();
                 self.queue_cursor = *cursor;
             }
             DaemonEvent::RepeatModeChanged { mode } => {
@@ -386,7 +386,7 @@ impl DaemonState {
             MAX_VOLUME
         );
         assert!(
-            self.queue.is_empty() || self.queue_cursor < self.queue.len() as u64,
+            self.queue.is_empty() || self.queue_cursor < self.queue.len() as u32,
             "queue_cursor {} out of bounds for queue len {}",
             self.queue_cursor,
             self.queue.len()

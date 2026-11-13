@@ -1140,7 +1140,7 @@ fn apply_queue_changed() {
         ..sample_track()
     };
     s.apply_event(&DaemonEvent::QueueChanged {
-        queue: vec![t2.clone()],
+        queue: vec![t2.clone()].into(),
         cursor: 0u64,
     });
     assert_eq!(s.queue.len(), 1);

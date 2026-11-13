@@ -4134,7 +4134,13 @@ impl Daemon {
             .map(|t| t.path)
             .filter(|p| p.starts_with("spotify:"));
         drop(state);
-        Self::push_event(inner, DaemonEvent::QueueChanged { queue, cursor });
+        Self::push_event(
+            inner,
+            DaemonEvent::QueueChanged {
+                queue: queue.into(),
+                cursor,
+            },
+        );
         inner.stream.lock().await.set_preload(preload);
     }
 

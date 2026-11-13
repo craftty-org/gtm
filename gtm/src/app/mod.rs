@@ -608,7 +608,7 @@ pub struct App {
     /// How the library track list is sorted.
     pub track_sort: TrackSort,
     pub is_ready: bool,
-    pub(crate) last_queue_cursor: u64,
+    pub(crate) last_queue_cursor: u32,
     /// Set when the user manually triggers Next/Prev so the "Up next"
     /// notification only appears on genuine auto-advance.
     pub manual_track_advance: bool,
