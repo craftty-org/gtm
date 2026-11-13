@@ -149,6 +149,10 @@ pub trait Mixer: Send + Sync {
     fn mono(&self) -> bool {
         false
     }
+
+    /// Enable or disable spectrum/waveform analysis work for active streams.
+    /// Disabling saves CPU when no client needs visualizer data.
+    fn set_visualizer_enabled(&self, _enabled: bool) {}
 }
 
 pub struct AudioMixer {
@@ -187,6 +191,8 @@ pub struct AudioMixer {
     spectrum: Arc<Mutex<Vec<f32>>>,
     // ─── Waveform (Wave/Stereo visualizer modes) ───
     wave: WaveformShared,
+    // ─── Visualizer gating ───
+    visualizer_enabled: Arc<AtomicBool>,
     // ─── Mono downmix ───
     mono: Arc<AtomicBool>,
     // Track if this is the first track (for prebuffer optimization)
@@ -198,6 +204,16 @@ const UNDERFLOW_GRACE: Duration = Duration::from_millis(30);
 struct MixerDeviceSink(rodio::MixerDeviceSink);
 
 impl Mixer for AudioMixer {
+    fn set_visualizer_enabled(&self, enabled: bool) {
+        self.visualizer_enabled.store(enabled, Ordering::Relaxed);
+        if let Some(c) = &self.active_control {
+            c.visualizer_enabled.store(enabled, Ordering::Relaxed);
+        }
+        if let Some(c) = &self.standby_control {
+            c.visualizer_enabled.store(enabled, Ordering::Relaxed);
+        }
+    }
+
     fn load_active(&mut self, path: &str, start_pos: f64) -> AudioResult<()> {
         self.load_active(path, start_pos)
     }
@@ -439,6 +455,7 @@ impl AudioMixer {
             underrun_since: None,
             spectrum: Arc::new(Mutex::new(Vec::new())),
             wave: WaveformShared::default(),
+            visualizer_enabled: Arc::new(AtomicBool::new(true)),
             mono: Arc::new(AtomicBool::new(false)),
             first_track: true,
         })
@@ -553,6 +570,7 @@ impl AudioMixer {
         reverb_room_size: &Arc<Mutex<f32>>,
         spectrum: &Arc<Mutex<Vec<f32>>>,
         wave: &WaveformShared,
+        visualizer_enabled: &Arc<AtomicBool>,
         prebuffer_samples: usize,
     ) -> AudioResult<(
         Arc<DecodeControl>,
@@ -560,6 +578,9 @@ impl AudioMixer {
         std::thread::JoinHandle<()>,
     )> {
         let control = Arc::new(DecodeControl::new());
+        control
+            .visualizer_enabled
+            .store(visualizer_enabled.load(Ordering::Relaxed), Ordering::Relaxed);
         let shared = Arc::new(RingBufferInner::new(BUFFER_CAPACITY_SAMPLES));
 
         let thread = DecodeThread::new(
@@ -620,6 +641,7 @@ impl AudioMixer {
             &self.reverb_room_size,
             &self.spectrum,
             &self.wave,
+            &self.visualizer_enabled,
             prebuffer,
         )?;
 
@@ -679,12 +701,16 @@ impl AudioMixer {
         reverb_room_size: &Arc<Mutex<f32>>,
         spectrum: &Arc<Mutex<Vec<f32>>>,
         wave: &WaveformShared,
+        visualizer_enabled: &Arc<AtomicBool>,
     ) -> AudioResult<(
         Arc<DecodeControl>,
         RingBufferSource,
         std::thread::JoinHandle<()>,
     )> {
         let control = Arc::new(DecodeControl::new());
+        control
+            .visualizer_enabled
+            .store(visualizer_enabled.load(Ordering::Relaxed), Ordering::Relaxed);
         let shared = Arc::new(RingBufferInner::new(BUFFER_CAPACITY_SAMPLES));
 
         let thread = DecodeThread::new_reader(
@@ -756,6 +782,7 @@ impl AudioMixer {
             &self.reverb_room_size,
             &self.spectrum,
             &self.wave,
+            &self.visualizer_enabled,
         )?;
 
         self.cancel_crossfade();
@@ -822,6 +849,7 @@ impl AudioMixer {
             &self.reverb_room_size,
             &self.spectrum,
             &self.wave,
+            &self.visualizer_enabled,
         )?;
 
         self.cancel_crossfade();
@@ -872,12 +900,16 @@ impl AudioMixer {
         reverb_room_size: &Arc<Mutex<f32>>,
         spectrum: &Arc<Mutex<Vec<f32>>>,
         wave: &WaveformShared,
+        visualizer_enabled: &Arc<AtomicBool>,
     ) -> AudioResult<(
         Arc<DecodeControl>,
         RingBufferSource,
         std::thread::JoinHandle<()>,
     )> {
         let control = Arc::new(DecodeControl::new());
+        control
+            .visualizer_enabled
+            .store(visualizer_enabled.load(Ordering::Relaxed), Ordering::Relaxed);
         let shared = Arc::new(RingBufferInner::new(BUFFER_CAPACITY_SAMPLES));
 
         let thread = DecodeThread::new_stream(
@@ -939,6 +971,7 @@ impl AudioMixer {
             &self.reverb_room_size,
             &self.spectrum,
             &self.wave,
+            &self.visualizer_enabled,
             PREBUFFER_SAMPLES_REDUCED,
         )?;
 
@@ -969,6 +1002,7 @@ impl AudioMixer {
             &self.reverb_room_size,
             &self.spectrum,
             &self.wave,
+            &self.visualizer_enabled,
         )?;
 
         self.standby().append(self.apply_mono(Box::new(source)));

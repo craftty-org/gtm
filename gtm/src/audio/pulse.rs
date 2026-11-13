@@ -255,6 +255,7 @@ pub struct PulseAudioMixer {
     reverb_enabled: Arc<AtomicBool>,
     reverb_room_size: Arc<Mutex<f32>>,
     spectrum: Arc<Mutex<Vec<f32>>>,
+    visualizer_enabled: Arc<AtomicBool>,
 }
 
 impl PulseAudioMixer {
@@ -291,6 +292,7 @@ impl PulseAudioMixer {
             reverb_enabled: Arc::new(AtomicBool::new(false)),
             reverb_room_size: Arc::new(Mutex::new(0.3)),
             spectrum: Arc::new(Mutex::new(Vec::new())),
+            visualizer_enabled: Arc::new(AtomicBool::new(true)),
         })
     }
 
@@ -429,9 +431,13 @@ impl PulseAudioMixer {
         reverb_enabled: &Arc<AtomicBool>,
         reverb_room_size: &Arc<Mutex<f32>>,
         spectrum: &Arc<Mutex<Vec<f32>>>,
+        visualizer_enabled: &Arc<AtomicBool>,
         prebuffer_samples: usize,
     ) -> AudioResult<(Arc<DecodeControl>, std::thread::JoinHandle<()>)> {
         let control = Arc::new(DecodeControl::new());
+        control
+            .visualizer_enabled
+            .store(visualizer_enabled.load(std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
         let thread = DecodeThread::new(
             path.to_string(),
             ring.clone(),
@@ -475,8 +481,12 @@ impl PulseAudioMixer {
         reverb_enabled: &Arc<AtomicBool>,
         reverb_room_size: &Arc<Mutex<f32>>,
         spectrum: &Arc<Mutex<Vec<f32>>>,
+        visualizer_enabled: &Arc<AtomicBool>,
     ) -> AudioResult<(Arc<DecodeControl>, std::thread::JoinHandle<()>)> {
         let control = Arc::new(DecodeControl::new());
+        control
+            .visualizer_enabled
+            .store(visualizer_enabled.load(std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
         let thread = DecodeThread::new_reader(
             reader,
             reopen,
@@ -534,8 +544,12 @@ impl PulseAudioMixer {
         reverb_enabled: &Arc<AtomicBool>,
         reverb_room_size: &Arc<Mutex<f32>>,
         spectrum: &Arc<Mutex<Vec<f32>>>,
+        visualizer_enabled: &Arc<AtomicBool>,
     ) -> AudioResult<(Arc<DecodeControl>, std::thread::JoinHandle<()>)> {
         let control = Arc::new(DecodeControl::new());
+        control
+            .visualizer_enabled
+            .store(visualizer_enabled.load(std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
         let thread = DecodeThread::new_stream(
             source,
             ring.clone(),
@@ -589,6 +603,15 @@ impl PulseAudioMixer {
 }
 
 impl Mixer for PulseAudioMixer {
+    fn set_visualizer_enabled(&self, enabled: bool) {
+        self.visualizer_enabled.store(enabled, Ordering::Relaxed);
+        for stream in [&self.stream_a, &self.stream_b] {
+            if let Some(c) = &stream.control {
+                c.visualizer_enabled.store(enabled, Ordering::Relaxed);
+            }
+        }
+    }
+
     fn load_active(&mut self, path: &str, start_pos: f64) -> AudioResult<()> {
         let dur = Self::probe_duration(path)?;
 
@@ -608,6 +631,7 @@ impl Mixer for PulseAudioMixer {
             &self.reverb_enabled,
             &self.reverb_room_size,
             &self.spectrum,
+            &self.visualizer_enabled,
             PREBUFFER_SAMPLES,
         )?;
 
@@ -664,6 +688,7 @@ impl Mixer for PulseAudioMixer {
             &self.reverb_enabled,
             &self.reverb_room_size,
             &self.spectrum,
+            &self.visualizer_enabled,
         )?;
 
         let client = self._client.clone();
@@ -708,6 +733,7 @@ impl Mixer for PulseAudioMixer {
             &self.reverb_enabled,
             &self.reverb_room_size,
             &self.spectrum,
+            &self.visualizer_enabled,
         )?;
 
         let client = self._client.clone();
@@ -761,6 +787,7 @@ impl Mixer for PulseAudioMixer {
             &self.reverb_enabled,
             &self.reverb_room_size,
             &self.spectrum,
+            &self.visualizer_enabled,
             PREBUFFER_SAMPLES,
         )?;
 
@@ -801,6 +828,7 @@ impl Mixer for PulseAudioMixer {
             &self.reverb_enabled,
             &self.reverb_room_size,
             &self.spectrum,
+            &self.visualizer_enabled,
         )?;
 
         let client = self._client.clone();
@@ -852,7 +880,9 @@ impl Mixer for PulseAudioMixer {
             })
             .expect("failed to spawn PA feed thread");
 
-        self.standby_mut().control = Some(Arc::new(DecodeControl::new()));
+        let ctrl = Arc::new(DecodeControl::new());
+        ctrl.visualizer_enabled.store(self.visualizer_enabled.load(std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
+        self.standby_mut().control = Some(ctrl);
         self.standby_mut().decode_handle = Some(handle);
 
         self.standby().uncork();

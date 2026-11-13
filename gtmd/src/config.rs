@@ -14,48 +14,7 @@ use gtm::shared::{is_termux, resolve_command_socket, resolve_pulse_socket, termu
 use serde::{Deserialize, Serialize};
 
 /// Default loopback port for the status endpoint.
-pub const WEB_PORT: u16 = 8991;
-
-/// Resolve `web_addr` from config.toml.
-///
-/// Absent means on, on loopback. An empty string means off. The endpoint
-/// reports what is playing, which is the user's listening history, so the
-/// default is the narrowest thing that is still useful; widening it is one
-/// line of config and has to be asked for deliberately.
-fn web_addr(toml: Option<&toml::Value>) -> Option<SocketAddr> {
-    let raw = toml.and_then(|v| v.get("web_addr")).map(|v| {
-        if let Some(s) = v.as_str() {
-            s.to_string()
-        } else if let Some(i) = v.as_integer() {
-            i.to_string()
-        } else {
-            String::new()
-        }
-    });
-    let addr = match raw {
-        Some(s) if s.trim().is_empty() => return None,
-        Some(s) => s,
-        None => format!("127.0.0.1:{WEB_PORT}"),
-    };
-    // A bare port is a convenience: `web_addr = 8992` means loopback on 8992,
-    // never 0.0.0.0, so the shorthand cannot accidentally expose the daemon.
-    let addr = if addr.chars().all(|c| c.is_ascii_digit()) {
-        format!("127.0.0.1:{addr}")
-    } else {
-        addr
-    };
-    match addr.parse() {
-        Ok(a) => Some(a),
-        Err(e) => {
-            eprintln!("gtmd: ignoring web_addr {addr:?}: {e}");
-            Some(
-                format!("127.0.0.1:{WEB_PORT}")
-                    .parse()
-                    .expect("loopback addr"),
-            )
-        }
-    }
-}
+pub use gtm::shared::config::WEB_PORT;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum AudioBackendKind {
@@ -308,20 +267,12 @@ impl DaemonConfig {
             .filter(|mb| *mb > 0)
             .map(|mb| (mb as u64) * 1024 * 1024)
             .unwrap_or(crate::cover::DISK_CACHE_DEFAULT);
-        let web_addr = web_addr(toml.as_ref());
-        let discord_id = discord_id(toml.as_ref());
+        let web_addr = gtm::shared::config::web_addr(toml.as_ref());
+        let discord_id = gtm::shared::config::discord_id(toml.as_ref());
         // Absent means no, which is the safe reading: a config written by an
         // older build has no opinion, and the older behaviour was not to play.
-        let resume_on_start = toml
-            .as_ref()
-            .and_then(|v| v.get("resume_on_start"))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let allow_delete_files = toml
-            .as_ref()
-            .and_then(|v| v.get("allow_delete_files"))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
+        let resume_on_start = gtm::shared::config::bool_or(toml.as_ref(), "resume_on_start", false);
+        let allow_delete_files = gtm::shared::config::bool_or(toml.as_ref(), "allow_delete_files", true);
         let providers = ProviderConfig::from_toml(toml.clone());
 
         DaemonConfig {
@@ -364,25 +315,8 @@ impl DaemonConfig {
     }
 }
 
-/// Resolve Discord application id from config.toml.
-///
-/// Accepts `discord_app_id` (daemon-facing key) and `discord_id` (client prefs key)
-/// for config coverage/compatibility.
-fn discord_id(toml: Option<&toml::Value>) -> Option<String> {
-    let raw = match toml.and_then(|v| v.get("discord_app_id").or_else(|| v.get("discord_id")))? {
-        toml::Value::String(s) => s.clone(),
-        toml::Value::Integer(i) => i.to_string(),
-        _ => return None,
-    };
-    let id = raw.trim();
-    // Discord's ids are numeric. Anything else is a paste error, and refusing
-    // it here is better than a handshake that silently never connects.
-    if id.is_empty() || !id.chars().all(|c| c.is_ascii_digit()) {
-        eprintln!("gtmd: ignoring discord_app_id {id:?}: expected a numeric application id");
-        return None;
-    }
-    Some(id.to_string())
-}
+// Shared config readers (discord_id, web_addr, bool defaults) live in
+// `gtm::shared::config` to keep daemon/client config behavior aligned.
 
 #[cfg(test)]
 mod tests {
@@ -395,9 +329,12 @@ mod tests {
     /// Loopback by default, because the endpoint reports listening history.
     #[test]
     fn web_defaults_to_loopback() {
-        assert_eq!(web_addr(None), Some("127.0.0.1:8991".parse().unwrap()));
         assert_eq!(
-            web_addr(Some(&val("[web]\n"))),
+            gtm::shared::config::web_addr(None),
+            Some("127.0.0.1:8991".parse().unwrap())
+        );
+        assert_eq!(
+            gtm::shared::config::web_addr(Some(&val("[web]\n"))),
             Some("127.0.0.1:8991".parse().unwrap())
         );
     }
@@ -405,7 +342,10 @@ mod tests {
     /// An empty value is how you turn it off.
     #[test]
     fn web_off_when_empty() {
-        assert_eq!(web_addr(Some(&val("web_addr = \"\""))), None);
+        assert_eq!(
+            gtm::shared::config::web_addr(Some(&val("web_addr = \"\""))),
+            None
+        );
     }
 
     /// A bare port is a convenience and must never widen the bind: a user who
@@ -413,7 +353,7 @@ mod tests {
     #[test]
     fn bare_port_stays_on_loopback() {
         assert_eq!(
-            web_addr(Some(&val("web_addr = 9000"))),
+            gtm::shared::config::web_addr(Some(&val("web_addr = 9000"))),
             Some("127.0.0.1:9000".parse().unwrap())
         );
     }
@@ -422,7 +362,7 @@ mod tests {
     #[test]
     fn web_addr_honours_an_explicit_bind() {
         assert_eq!(
-            web_addr(Some(&val("web_addr = \"0.0.0.0:8991\""))),
+            gtm::shared::config::web_addr(Some(&val("web_addr = \"0.0.0.0:8991\""))),
             Some("0.0.0.0:8991".parse().unwrap())
         );
     }
@@ -432,26 +372,29 @@ mod tests {
     #[test]
     fn bad_web_addr_falls_back_to_loopback() {
         assert_eq!(
-            web_addr(Some(&val("web_addr = \"not-an-addr\""))),
+            gtm::shared::config::web_addr(Some(&val("web_addr = \"not-an-addr\""))),
             Some("127.0.0.1:8991".parse().unwrap())
         );
     }
 
     #[test]
     fn discord_off_by_default() {
-        assert_eq!(discord_id(None), None);
-        assert_eq!(discord_id(Some(&val("[audio]\n"))), None);
+        assert_eq!(gtm::shared::config::discord_id(None), None);
+        assert_eq!(
+            gtm::shared::config::discord_id(Some(&val("[audio]\n"))),
+            None
+        );
     }
 
     #[test]
     fn discord_accepts_a_numeric_id() {
         let id = "1554792961844445225".to_string();
         assert_eq!(
-            discord_id(Some(&val(&format!("discord_app_id = {id}")))),
+            gtm::shared::config::discord_id(Some(&val(&format!("discord_app_id = {id}")))),
             Some(id.clone())
         );
         assert_eq!(
-            discord_id(Some(&val(&format!("discord_app_id = \"{id}\"")))),
+            gtm::shared::config::discord_id(Some(&val(&format!("discord_app_id = \"{id}\"")))),
             Some(id)
         );
     }
@@ -460,7 +403,13 @@ mod tests {
     /// is a much worse way to learn that than a refusal at load.
     #[test]
     fn discord_rejects_a_non_numeric_id() {
-        assert_eq!(discord_id(Some(&val("discord_app_id = \"abc\""))), None);
-        assert_eq!(discord_id(Some(&val("discord_app_id = \"\""))), None);
+        assert_eq!(
+            gtm::shared::config::discord_id(Some(&val("discord_app_id = \"abc\""))),
+            None
+        );
+        assert_eq!(
+            gtm::shared::config::discord_id(Some(&val("discord_app_id = \"\""))),
+            None
+        );
     }
 }

@@ -199,6 +199,9 @@ pub struct DecodeControl {
     /// consumer. Shared with the ring that counts them, so the health report
     /// can read it without holding the buffer.
     pub dropped: Arc<AtomicU64>,
+    /// Whether spectrum/waveform analysis should run for this decode stream.
+    /// Disabled when no clients need visualizer data to save CPU/memory traffic.
+    pub visualizer_enabled: Arc<AtomicBool>,
 }
 
 impl Default for DecodeControl {
@@ -218,6 +221,7 @@ impl DecodeControl {
             sample_rate: AtomicU32::new(44100),
             channels: AtomicU16::new(2),
             dropped: Arc::new(AtomicU64::new(0)),
+            visualizer_enabled: Arc::new(AtomicBool::new(true)),
         }
     }
 

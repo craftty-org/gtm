@@ -656,34 +656,41 @@ impl DecodeThread {
                 );
                 sample_count += 1;
 
+                let visualizer_on = self.control.visualizer_enabled.load(Ordering::Relaxed);
                 // Accumulate (decimated) samples for spectrum analysis.
-                if spectrum_count.is_multiple_of(SPECTRUM_DECIMATION)
-                    && spectrum_analyzer.push(final_sample, &mut spectrum_frame)
-                    && let Ok(mut spec) = self.spectrum.lock()
-                {
-                    spec.clear();
-                    spec.extend_from_slice(&spectrum_frame);
-                }
-                spectrum_count += 1;
-
-                // Tap a decimated interleaved L/R ring for the Wave/Stereo
-                // visualizer modes. Reverb's stereo pair path (which reads
-                // ahead and `continue`s) never reaches this tap; those frames
-                // simply don't contribute, matching the spectrum behaviour.
-                let is_left = channels == 1 || (sample_count - 1).is_multiple_of(2);
-                let pair = if channels == 1 {
-                    Some((final_sample, final_sample))
-                } else if is_left {
-                    wave_left = Some(final_sample);
-                    None
-                } else {
-                    wave_left.take().map(|l| (l, final_sample))
-                };
-                if let Some((l, r)) = pair {
-                    wave_frames += 1;
-                    if wave_frames.is_multiple_of(WAVEFORM_DECIM) {
-                        self.wave.push_frame(l, r);
+                if visualizer_on {
+                    if spectrum_count.is_multiple_of(SPECTRUM_DECIMATION)
+                        && spectrum_analyzer.push(final_sample, &mut spectrum_frame)
+                        && let Ok(mut spec) = self.spectrum.lock()
+                    {
+                        spec.clear();
+                        spec.extend_from_slice(&spectrum_frame);
                     }
+                    spectrum_count += 1;
+
+                    // Tap a decimated interleaved L/R ring for the Wave/Stereo
+                    // visualizer modes. Reverb's stereo pair path (which reads
+                    // ahead and `continue`s) never reaches this tap; those frames
+                    // simply don't contribute, matching the spectrum behaviour.
+                    let is_left = channels == 1 || (sample_count - 1).is_multiple_of(2);
+                    let pair = if channels == 1 {
+                        Some((final_sample, final_sample))
+                    } else if is_left {
+                        wave_left = Some(final_sample);
+                        None
+                    } else {
+                        wave_left.take().map(|l| (l, final_sample))
+                    };
+                    if let Some((l, r)) = pair {
+                        wave_frames += 1;
+                        if wave_frames.is_multiple_of(WAVEFORM_DECIM) {
+                            self.wave.push_frame(l, r);
+                        }
+                    }
+                } else {
+                    spectrum_count = 0;
+                    wave_left = None;
+                    wave_frames = 0;
                 }
 
                 prebuffer_check(

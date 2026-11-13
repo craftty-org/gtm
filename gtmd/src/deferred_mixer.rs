@@ -289,4 +289,11 @@ impl Mixer for DeferredMixer {
     fn mono(&self) -> bool {
         self.ensure_ref().map(|m| m.mono()).unwrap_or(false)
     }
+
+    fn set_visualizer_enabled(&self, enabled: bool) {
+        // Avoid eager mixer/device initialization: only propagate if already live.
+        if let Some(m) = self.inner.get() {
+            m.set_visualizer_enabled(enabled);
+        }
+    }
 }

@@ -3220,7 +3220,10 @@ impl Daemon {
         inner: Arc<DaemonInner>,
         req_tx: mpsc::UnboundedSender<(ClientId, u64, DaemonReq, ReplyTx)>,
     ) {
-        inner.active_clients.fetch_add(1, Ordering::Relaxed);
+        let prev_clients = inner.active_clients.fetch_add(1, Ordering::Relaxed);
+        if prev_clients == 0 {
+            inner.mixer.lock().await.set_visualizer_enabled(true);
+        }
 
         let (reader, writer) = stream.into_split();
         let (reply_tx, mut reply_rx) = mpsc::unbounded_channel::<(u64, DaemonRes)>();
@@ -3288,9 +3291,10 @@ impl Daemon {
                 }
             }
             token_reader.cancel();
-            inner_clone.active_clients.fetch_sub(1, Ordering::Relaxed);
+            let prev_clients = inner_clone.active_clients.fetch_sub(1, Ordering::Relaxed);
             info!("client {client_id} disconnected");
-            if inner_clone.active_clients.load(Ordering::Relaxed) == 0 {
+            if prev_clients == 1 {
+                inner_clone.mixer.lock().await.set_visualizer_enabled(false);
                 Daemon::maybe_prune_idle(&inner_clone).await;
             }
         });
@@ -4201,6 +4205,13 @@ impl Daemon {
             return tracks;
         }
         let mut list = tracks;
+        // Fallback/default playback only needs core display+playback fields.
+        // Dropping heavy/unused metadata cuts per-entry heap use for large libraries.
+        for t in &mut list {
+            t.hash.clear();
+            t.bitrate = None;
+            t.samplerate = None;
+        }
         let shuffle = inner.state.read().await.shuffle;
         if shuffle {
             fastrand::shuffle(&mut list);

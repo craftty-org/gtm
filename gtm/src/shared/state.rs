@@ -597,21 +597,27 @@ impl SavedState {
 
     /// Apply this saved state to a `DaemonState`, restoring persisted fields.
     pub fn apply_to(&self, state: &mut DaemonState) {
+        macro_rules! restore {
+            ($field:ident) => {
+                state.$field = self.$field.clone();
+            };
+            (copy $field:ident) => {
+                state.$field = self.$field;
+            };
+        }
         state.queue = self.queue.clone();
         state.queue_cursor = self.queue_cursor.min(state.queue.len() as u64);
-        state.volume = self.volume;
-        state.repeat = self.repeat;
-        state.shuffle = self.shuffle;
-        state.mute = self.mute;
-        state.mono = self.mono;
-        state.crossfade = self.crossfade.clone();
-        state.audio = self.audio.clone();
-        state.scrobble = self.scrobble.clone();
-        // Restore the last track so the daemon can resume exactly as left.
-        // Actual playback is kicked off by the startup resume task.
-        state.current_track = self.current_track.clone();
-        state.source = self.source.clone();
-        state.time_pos = self.time_pos;
+        restore!(copy volume);
+        restore!(copy repeat);
+        restore!(copy shuffle);
+        restore!(copy mute);
+        restore!(copy mono);
+        restore!(crossfade);
+        restore!(audio);
+        restore!(scrobble);
+        restore!(current_track);
+        restore!(source);
+        restore!(copy time_pos);
         if let Some(track) = &self.current_track {
             state.duration = track.duration;
             // Always Paused, never Playing -- whatever the file says.
