@@ -685,8 +685,8 @@ impl AudioVisualizer {
             }
         }
         // Top rows cool hardest.
-        for x in 0..cols {
-            self.heat[x] *= 0.82;
+        for v in self.heat.iter_mut().take(cols) {
+            *v *= 0.82;
         }
         // Seed the bottom (source) row from the spectrum + ember base. With no
         // playback the source is cold and the field burns out.
