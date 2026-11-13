@@ -4588,7 +4588,7 @@ impl Daemon {
             }
             // Prefer decode-thread standby so network reads/decode stay off the
             // audio callback and format comes from the actual stream pipeline.
-            if let Err(_) = mixer.load_standby_reader(opened.0, Some(opened.1)) {
+            if mixer.load_standby_reader(opened.0, Some(opened.1)).is_err() {
                 // Fallback for backends without reader standby support.
                 drop(mixer);
                 let fb_url = url.clone();

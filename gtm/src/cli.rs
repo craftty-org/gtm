@@ -172,7 +172,11 @@ pub fn run(socket: Option<String>, json: bool, verbose: bool, cmd: &CliCommand) 
                 if !std::path::Path::new(&path).exists() {
                     Err(format!("no such file: {path}"))
                 } else {
-                    client.play(&path, pos).await.map(|()| "ok".into()).map_err(|e| e.to_string())
+                    client
+                        .play(&path, pos)
+                        .await
+                        .map(|()| "ok".into())
+                        .map_err(|e| e.to_string())
                 }
             }
             CliCommand::Stream { url } => client
@@ -180,9 +184,21 @@ pub fn run(socket: Option<String>, json: bool, verbose: bool, cmd: &CliCommand) 
                 .await
                 .map(|()| "ok".into())
                 .map_err(|e| e.to_string()),
-            CliCommand::PlayPause => client.play_pause().await.map(|()| "ok".into()).map_err(|e| e.to_string()),
-            CliCommand::Pause => client.pause().await.map(|()| "ok".into()).map_err(|e| e.to_string()),
-            CliCommand::Stop => client.stop().await.map(|()| "ok".into()).map_err(|e| e.to_string()),
+            CliCommand::PlayPause => client
+                .play_pause()
+                .await
+                .map(|()| "ok".into())
+                .map_err(|e| e.to_string()),
+            CliCommand::Pause => client
+                .pause()
+                .await
+                .map(|()| "ok".into())
+                .map_err(|e| e.to_string()),
+            CliCommand::Stop => client
+                .stop()
+                .await
+                .map(|()| "ok".into())
+                .map_err(|e| e.to_string()),
             CliCommand::Next => {
                 client.next().await.map_err(|e| e.to_string())?;
                 if verbose {
@@ -205,20 +221,43 @@ pub fn run(socket: Option<String>, json: bool, verbose: bool, cmd: &CliCommand) 
                     Ok("ok".into())
                 }
             }
-            CliCommand::Seek { position_secs } => client.seek(*position_secs).await.map(|()| "ok".into()).map_err(|e| e.to_string()),
+            CliCommand::Seek { position_secs } => client
+                .seek(*position_secs)
+                .await
+                .map(|()| "ok".into())
+                .map_err(|e| e.to_string()),
             CliCommand::Volume { volume } => match volume {
                 Some(v) => {
                     client.set_volume(*v).await.map_err(|e| e.to_string())?;
-                    if verbose { Ok(format!("Volume: {v}%")) } else { Ok("ok".into()) }
+                    if verbose {
+                        Ok(format!("Volume: {v}%"))
+                    } else {
+                        Ok("ok".into())
+                    }
                 }
-                None => Ok(format!("{}", client.get_volume().await.map_err(|e| e.to_string())?)),
+                None => Ok(format!(
+                    "{}",
+                    client.get_volume().await.map_err(|e| e.to_string())?
+                )),
             },
-            CliCommand::Shuffle => client.toggle_shuffle().await.map(|()| "ok".into()).map_err(|e| e.to_string()),
+            CliCommand::Shuffle => client
+                .toggle_shuffle()
+                .await
+                .map(|()| "ok".into())
+                .map_err(|e| e.to_string()),
             CliCommand::Repeat { mode } => {
                 let mode: RepeatMode = mode.parse().map_err(|e: String| e)?;
-                client.cycle_repeat(mode).await.map(|()| "ok".into()).map_err(|e| e.to_string())
+                client
+                    .cycle_repeat(mode)
+                    .await
+                    .map(|()| "ok".into())
+                    .map_err(|e| e.to_string())
             }
-            CliCommand::Mute => client.toggle_mute().await.map(|()| "ok".into()).map_err(|e| e.to_string()),
+            CliCommand::Mute => client
+                .toggle_mute()
+                .await
+                .map(|()| "ok".into())
+                .map_err(|e| e.to_string()),
             CliCommand::Status { stream } => {
                 if *stream {
                     loop {
@@ -227,14 +266,21 @@ pub fn run(socket: Option<String>, json: bool, verbose: bool, cmd: &CliCommand) 
                         let dur = state.duration as u64;
                         let track = state.current_track.as_ref().map_or("No track".into(), |t| {
                             let title = t.display_title();
-                            if t.artist.is_empty() { title } else { format!("{} - {}", t.artist, title) }
+                            if t.artist.is_empty() {
+                                title
+                            } else {
+                                format!("{} - {}", t.artist, title)
+                            }
                         });
                         let status_label = match state.status {
                             PlaybackStatus::Playing => "Playing",
                             PlaybackStatus::Paused => "Paused",
                             PlaybackStatus::Stopped => "Stopped",
                         };
-                        print!("\x1b[H\x1b[J{status_label}: {track} | {elapsed}s / {dur}s | {}%", state.volume);
+                        print!(
+                            "\x1b[H\x1b[J{status_label}: {track} | {elapsed}s / {dur}s | {}%",
+                            state.volume
+                        );
                         std::io::stdout().flush().ok();
                         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     }
@@ -249,12 +295,34 @@ pub fn run(socket: Option<String>, json: bool, verbose: bool, cmd: &CliCommand) 
             }
             CliCommand::Queue => {
                 let res = client.queue().list().await.map_err(|e| e.to_string())?;
-                if json { serde_json::to_string_pretty(&res).map_err(|e| e.to_string()) } else { Ok(format!("{res:?}")) }
+                if json {
+                    serde_json::to_string_pretty(&res).map_err(|e| e.to_string())
+                } else {
+                    Ok(format!("{res:?}"))
+                }
             }
-            CliCommand::QueueAdd { paths, position } => client.queue().add_many(paths.clone(), *position).await.map(|()| "ok".into()).map_err(|e| e.to_string()),
-            CliCommand::QueueRemove { index } => client.queue().remove(*index).await.map(|()| "ok".into()).map_err(|e| e.to_string()),
-            CliCommand::QueueClear => client.queue().clear().await.map(|()| "ok".into()).map_err(|e| e.to_string()),
-            CliCommand::Ping => { client.ping().await.map_err(|e| e.to_string())?; Ok("pong".into()) }
+            CliCommand::QueueAdd { paths, position } => client
+                .queue()
+                .add_many(paths.clone(), *position)
+                .await
+                .map(|()| "ok".into())
+                .map_err(|e| e.to_string()),
+            CliCommand::QueueRemove { index } => client
+                .queue()
+                .remove(*index)
+                .await
+                .map(|()| "ok".into())
+                .map_err(|e| e.to_string()),
+            CliCommand::QueueClear => client
+                .queue()
+                .clear()
+                .await
+                .map(|()| "ok".into())
+                .map_err(|e| e.to_string()),
+            CliCommand::Ping => {
+                client.ping().await.map_err(|e| e.to_string())?;
+                Ok("pong".into())
+            }
             CliCommand::CheckHealth => {
                 let report = client.check_health().await.map_err(|e| e.to_string())?;
                 if json {
@@ -272,14 +340,22 @@ pub fn run(socket: Option<String>, json: bool, verbose: bool, cmd: &CliCommand) 
                             HealthStatus::Error => "\x1b[31m✗\x1b[0m",
                         };
                         out += &format!("  {icon} \x1b[1m{}\x1b[0m", c.name);
-                        if let Some(ref msg) = c.message { out += &format!(": {msg}"); }
-                        if let Some(uptime) = c.uptime_secs { out += &format!(" (uptime {:.0}s)", uptime); }
+                        if let Some(ref msg) = c.message {
+                            out += &format!(": {msg}");
+                        }
+                        if let Some(uptime) = c.uptime_secs {
+                            out += &format!(" (uptime {:.0}s)", uptime);
+                        }
                         out += "\n";
                     }
                     Ok(out)
                 }
             }
-            CliCommand::Quit => client.quit().await.map(|()| "ok".into()).map_err(|e| e.to_string()),
+            CliCommand::Quit => client
+                .quit()
+                .await
+                .map(|()| "ok".into())
+                .map_err(|e| e.to_string()),
             CliCommand::Config { .. } => unreachable!(),
         }
     });
@@ -307,10 +383,21 @@ fn format_status(state: &crate::shared::global::DaemonState) -> String {
         PlaybackStatus::Paused => "\x1b[33m⏸ Paused\x1b[0m",
         PlaybackStatus::Stopped => "\x1b[31m⏹ Stopped\x1b[0m",
     };
-    let track_str = state.current_track.as_ref().map(|t| {
-        let title = match t.display_title() { s if s.is_empty() => "Unknown".to_string(), s => s };
-        if t.artist.is_empty() { title } else { format!("{}: {}", t.artist, title) }
-    }).unwrap_or_else(|| "No track".into());
+    let track_str = state
+        .current_track
+        .as_ref()
+        .map(|t| {
+            let title = match t.display_title() {
+                s if s.is_empty() => "Unknown".to_string(),
+                s => s,
+            };
+            if t.artist.is_empty() {
+                title
+            } else {
+                format!("{}: {}", t.artist, title)
+            }
+        })
+        .unwrap_or_else(|| "No track".into());
     format!(
         "\x1b[1mPlayback:\x1b[0m  {status_str}\n\
          \x1b[1mTrack:\x1b[0m    {track_str}\n\
@@ -319,9 +406,17 @@ fn format_status(state: &crate::shared::global::DaemonState) -> String {
          \x1b[1mShuffle:\x1b[0m  {}\n\
          \x1b[1mQueue:\x1b[0m    {} tracks, cursor {}/{}",
         state.volume,
-        if state.mute { "\x1b[33mMuted\x1b[0m" } else { "Unmuted" },
+        if state.mute {
+            "\x1b[33mMuted\x1b[0m"
+        } else {
+            "Unmuted"
+        },
         state.repeat,
-        if state.shuffle { "\x1b[32mOn\x1b[0m" } else { "Off" },
+        if state.shuffle {
+            "\x1b[32mOn\x1b[0m"
+        } else {
+            "Off"
+        },
         state.queue.len(),
         state.queue_cursor + 1,
         state.queue.len().max(1),
@@ -331,7 +426,10 @@ fn format_status(state: &crate::shared::global::DaemonState) -> String {
 fn open_config() -> Result<(), String> {
     let path = ensure_prefs_file();
     let editor = pick_editor().ok_or_else(|| {
-        format!("no editor found: set $VISUAL or $EDITOR to open {}", path.display())
+        format!(
+            "no editor found: set $VISUAL or $EDITOR to open {}",
+            path.display()
+        )
     })?;
     let program = editor[0].clone();
     let status = std::process::Command::new(&program)
@@ -351,13 +449,17 @@ fn pick_editor() -> Option<Vec<String>> {
     for var in ["VISUAL", "EDITOR"] {
         if let Ok(val) = std::env::var(var) {
             let parts: Vec<String> = val.split_whitespace().map(String::from).collect();
-            if let Some(program) = parts.first() {
-                if command_exists(program) { return Some(parts); }
+            if let Some(program) = parts.first()
+                && command_exists(program)
+            {
+                return Some(parts);
             }
         }
     }
     for name in ["vim", "nvim", "vi", "nano", "micro", "emacs", "ed"] {
-        if command_exists(name) { return Some(vec![name.to_string()]); }
+        if command_exists(name) {
+            return Some(vec![name.to_string()]);
+        }
     }
     None
 }
