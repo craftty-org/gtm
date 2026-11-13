@@ -1691,33 +1691,33 @@ impl Cmd {
         Ok(DaemonRes::Ok)
     }
 
-    pub async fn get_status(inner: &DaemonInner) -> Result<DaemonRes, CoreError> {
+    async fn status_snapshot(inner: &DaemonInner, lite: bool) -> Result<DaemonRes, CoreError> {
         let state = inner.state.read().await;
-        let mut state_clone = state.clone();
+        let mut snap = state.clone();
         let (queue, cursor) = queue::visible(&state);
-        state_clone.queue = queue;
-        state_clone.queue_cursor = cursor;
+        snap.queue = queue;
+        snap.queue_cursor = cursor;
+        if lite {
+            snap.default_list.clear();
+            snap.audio_levels.clear();
+            snap.wave_samples.clear();
+        }
         drop(state);
         Ok(DaemonRes::Status {
-            state: Box::new(state_clone),
+            state: Box::new(snap),
         })
     }
 
-    /// Like [`get_status`] but drops `default_list` (the whole library) from
-    /// the returned state. The client never reads `default_list` — the merged
-    /// `queue` view is what it renders — so the periodic background refresh
-    /// saves re-serializing the full library on every tick.
+    pub async fn get_status(inner: &DaemonInner) -> Result<DaemonRes, CoreError> {
+        Self::status_snapshot(inner, false).await
+    }
+
+    /// Like [`get_status`] but drops `default_list` (the whole library) and
+    /// transient visualizer payloads from the returned state. The periodic
+    /// background refresh never needs them, so this avoids cloning/serializing
+    /// large buffers on every tick.
     pub async fn get_status_lite(inner: &DaemonInner) -> Result<DaemonRes, CoreError> {
-        let state = inner.state.read().await;
-        let mut state_clone = state.clone();
-        let (queue, cursor) = queue::visible(&state);
-        state_clone.queue = queue;
-        state_clone.queue_cursor = cursor;
-        state_clone.default_list.clear();
-        drop(state);
-        Ok(DaemonRes::Status {
-            state: Box::new(state_clone),
-        })
+        Self::status_snapshot(inner, true).await
     }
 
     pub async fn check_health(inner: &DaemonInner) -> Result<DaemonRes, CoreError> {
@@ -4073,6 +4073,8 @@ impl Daemon {
         {
             let mut state = inner.state.write().await;
             state.audio_levels.clear();
+            state.wave_samples.clear();
+            state.wave_stereo = false;
             if state.status == PlaybackStatus::Stopped {
                 state.default_list.clear();
                 state.default_cursor = 0;
@@ -4199,28 +4201,30 @@ impl Daemon {
             return tracks;
         }
         let mut list = tracks;
-        list.sort_by_key(|a| a.title.to_lowercase());
         let shuffle = inner.state.read().await.shuffle;
         if shuffle {
             fastrand::shuffle(&mut list);
-        } else if let Some(key) = resume_key {
-            let key_char = key
-                .chars()
-                .next()
-                .map(|c| c.to_lowercase().next().unwrap_or(c))
-                .unwrap_or('\0');
-            let pos = list.iter().position(|t| {
-                t.title
+        } else {
+            list.sort_by_cached_key(|a| a.title.to_lowercase());
+            if let Some(key) = resume_key {
+                let key_char = key
                     .chars()
                     .next()
                     .map(|c| c.to_lowercase().next().unwrap_or(c))
-                    .unwrap_or('\0')
-                    >= key_char
-            });
-            if let Some(pos) = pos
-                && pos > 0
-            {
-                list.rotate_left(pos);
+                    .unwrap_or('\0');
+                let pos = list.iter().position(|t| {
+                    t.title
+                        .chars()
+                        .next()
+                        .map(|c| c.to_lowercase().next().unwrap_or(c))
+                        .unwrap_or('\0')
+                        >= key_char
+                });
+                if let Some(pos) = pos
+                    && pos > 0
+                {
+                    list.rotate_left(pos);
+                }
             }
         }
         list
@@ -4559,37 +4563,61 @@ impl Daemon {
             return false;
         }
         let is_remote = parse_remote_path(&path).is_some();
-        let decoded = if is_remote {
-            match resolve_remote(inner, &path).await {
-                Ok(resolved) => {
-                    let (url, live) = (resolved.url, resolved.live);
-                    let start = 0.0;
-                    tokio::task::spawn_blocking(move || {
-                        decode_remote_reader(url, live, start, None)
-                    })
-                    .await
-                }
+        if is_remote {
+            let resolved = match resolve_remote(inner, &path).await {
+                Ok(r) => r,
                 Err(e) => {
                     warn!("crossfade resolve failed: {e}");
                     return false;
                 }
-            }
-        } else {
-            let path_owned = path.clone();
-            tokio::task::spawn_blocking(move || AudioMixer::decode_file(&path_owned)).await
-        };
-        let source = match decoded {
-            Ok(Ok(source)) => source,
-            _ => return false,
-        };
-        {
+            };
+            let url = resolved.url;
+            let live = resolved.live;
+            let open_url = url.clone();
+            let opened = match tokio::task::spawn_blocking(move || {
+                open_remote_stream(&open_url, live, None)
+            })
+            .await
+            {
+                Ok(Ok(v)) => v,
+                _ => return false,
+            };
             let mut mixer = inner.mixer.lock().await;
-            // A user play/stop was issued while the next track was decoding:
-            // abandon the stale load instead of crossfading over it.
             if inner.play_session.load(Ordering::Acquire) != session {
                 return false;
             }
-            if mixer.load_standby_decoded(source).is_err() {
+            // Prefer decode-thread standby so network reads/decode stay off the
+            // audio callback and format comes from the actual stream pipeline.
+            if let Err(_) = mixer.load_standby_reader(opened.0, Some(opened.1)) {
+                // Fallback for backends without reader standby support.
+                drop(mixer);
+                let fb_url = url.clone();
+                let decoded = tokio::task::spawn_blocking(move || {
+                    decode_remote_reader(fb_url, live, 0.0, None)
+                })
+                .await;
+                let source = match decoded {
+                    Ok(Ok(s)) => s,
+                    _ => return false,
+                };
+                let mut mixer = inner.mixer.lock().await;
+                if inner.play_session.load(Ordering::Acquire) != session
+                    || mixer.load_standby_decoded(source).is_err()
+                {
+                    return false;
+                }
+                mixer.start_crossfade(dur);
+            } else {
+                mixer.start_crossfade(dur);
+            }
+        } else {
+            // Use the file-based standby path (decode thread + ring buffer) to
+            // avoid decoding on the audio callback thread during crossfade.
+            let mut mixer = inner.mixer.lock().await;
+            if inner.play_session.load(Ordering::Acquire) != session {
+                return false;
+            }
+            if mixer.load_standby(&path).is_err() {
                 return false;
             }
             mixer.start_crossfade(dur);

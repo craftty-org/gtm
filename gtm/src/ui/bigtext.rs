@@ -69,7 +69,7 @@ pub(crate) fn mark(icon_style: &str) -> &'static str {
 }
 
 /// Where the hint leads. `s` on the welcome pane and in About opens it.
-pub(crate) const REPO: &str = "https://github.com/prjctimg/gtm";
+pub(crate) const REPO: &str = "https://github.com/craftty-org/gtm";
 
 /// Blank rows between the wordmark and the text beneath it, and between that
 /// text and the provider row.

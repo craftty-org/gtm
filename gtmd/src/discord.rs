@@ -211,11 +211,11 @@ pub(crate) async fn serve(inner: std::sync::Arc<DaemonInner>, config_dir: std::p
     }
 }
 
-/// Read `discord_app_id` from config.toml.
+/// Read Discord application id from config.toml.
 fn read_id(config_dir: &std::path::Path) -> Option<String> {
     let toml = std::fs::read_to_string(config_dir.join("config.toml")).ok()?;
     let v: toml::Value = toml::from_str(&toml).ok()?;
-    let raw = match v.get("discord_app_id") {
+    let raw = match v.get("discord_app_id").or_else(|| v.get("discord_id")) {
         Some(toml::Value::String(s)) => s.trim().to_string(),
         Some(toml::Value::Integer(i)) => i.to_string(),
         _ => return None,

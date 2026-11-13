@@ -317,6 +317,11 @@ impl DaemonConfig {
             .and_then(|v| v.get("resume_on_start"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
+        let allow_delete_files = toml
+            .as_ref()
+            .and_then(|v| v.get("allow_delete_files"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
         let providers = ProviderConfig::from_toml(toml.clone());
 
         DaemonConfig {
@@ -331,7 +336,7 @@ impl DaemonConfig {
             log_file,
             test_mode: args.test_mode,
             audio_backend,
-            allow_delete_files: true,
+            allow_delete_files,
             cover_provider,
             cover_cache_bytes,
             web_addr,
@@ -359,9 +364,12 @@ impl DaemonConfig {
     }
 }
 
-/// Resolve `discord_app_id` from config.toml.
+/// Resolve Discord application id from config.toml.
+///
+/// Accepts `discord_app_id` (daemon-facing key) and `discord_id` (client prefs key)
+/// for config coverage/compatibility.
 fn discord_id(toml: Option<&toml::Value>) -> Option<String> {
-    let raw = match toml.and_then(|v| v.get("discord_app_id"))? {
+    let raw = match toml.and_then(|v| v.get("discord_app_id").or_else(|| v.get("discord_id")))? {
         toml::Value::String(s) => s.clone(),
         toml::Value::Integer(i) => i.to_string(),
         _ => return None,

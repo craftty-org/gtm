@@ -108,8 +108,14 @@ pub struct Prefs {
     #[serde(default = "default_cover_provider")]
     pub(crate) cover_provider: String,
     /// Discord application id for Rich Presence, written by the Setup form.
-    /// `None` disables presence.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// `None` disables presence. Serialized as `discord_app_id` for daemon/config
+    /// consistency; `discord_id` is accepted for compatibility.
+    #[serde(
+        default,
+        rename = "discord_app_id",
+        alias = "discord_id",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub(crate) discord_id: Option<String>,
     #[serde(default = "default_fetch_lyrics")]
     pub(crate) auto_fetch_lyrics: bool,

@@ -7,41 +7,15 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-use crate::audio::eq::{PRE_GAIN_MAX_DB, PRE_GAIN_MIN_DB};
-use crate::providers::external::{
-    ProviderPlaylist as ExternalPlaylist, ProviderSource, ProviderTrack,
-};
-use crate::providers::playlist::{
-    NewPlaylist, PlaylistId, PlaylistItem, PlaylistSlot, PlaylistSource,
-};
-use crate::shared::client::{DaemonClient, LastfmStatus};
+use crate::shared::client::DaemonClient;
 use crate::shared::daemon::ensure_daemon_running;
 use crate::shared::global::{PlaybackStatus, RepeatMode};
-use crate::shared::ipc::DaemonRes;
 use crate::shared::ipc::HealthStatus;
-use crate::shared::ipc::MetadataPatch;
-use crate::shared::playlist::PlaylistFormatKind;
 use crate::shared::resolve_command_socket;
-use crate::shared::secret::{
-    LASTFM_API_KEY, LASTFM_API_SECRET, SPOTIFY_CLIENT_ID, delete_secret, get_secret,
-};
-use crate::shared::spotify::SpotifyStatus;
-use crate::shared::track::{LrcData, TrackInfo};
 use clap::{Parser, Subcommand};
 
 use crate::app::{Prefs, ensure_prefs_file};
 use crate::footer::format_uptime;
-use crate::oauth::mask_credential;
-use crate::ui::run_tui;
-
-/// Parse a CLI `--format` value into a [`PlaylistFormatKind`].
-fn parse_format(s: &str) -> Result<PlaylistFormatKind, String> {
-    match s.to_ascii_lowercase().as_str() {
-        "m3u8" | "m3u" => Ok(PlaylistFormatKind::M3u8),
-        "pls" => Ok(PlaylistFormatKind::Pls),
-        _ => Err(format!("unknown playlist format: {s}")),
-    }
-}
 
 #[derive(Parser)]
 #[command(
@@ -63,11 +37,6 @@ pub struct Args {
     pub json: bool,
 
     /// Write a shell completion script to stdout and exit
-    ///
-    /// Hidden: packaging calls it, users do not. Completions are generated from the
-    /// real command tree rather than a hand-maintained copy of this struct,
-    /// which is what stops the shipped scripts from drifting out of match with
-    /// the CLI.
     #[arg(long, value_name = "SHELL", hide = true)]
     pub completions: Option<clap_complete::Shell>,
 
@@ -77,14 +46,14 @@ pub struct Args {
 
 #[derive(Subcommand)]
 pub enum CliCommand {
-    /// Play an audio file or resume playback
+    /// Play an audio file, URL, or resume playback
     Play {
         #[arg(value_name = "PATH", value_hint = clap::ValueHint::FilePath)]
         path: String,
         #[arg(value_name = "SECONDS")]
         start_pos: Option<f64>,
     },
-    /// Play an HTTP(S) stream URL (M3U/PLS playlists are auto-resolved)
+    /// Play an HTTP(S) stream URL
     Stream {
         #[arg(value_name = "URL")]
         url: String,
@@ -106,8 +75,6 @@ pub enum CliCommand {
         /// Volume percentage; omit to read the current volume
         volume: Option<u8>,
     },
-    /// List the equalizer presets the daemon offers
-    EqPresets,
     /// Toggle shuffle
     Shuffle,
     /// Set repeat mode (off, one, all)
@@ -117,28 +84,11 @@ pub enum CliCommand {
     },
     /// Toggle mute
     Mute,
-    /// Toggle mono downmix
-    Mono,
-    /// Love the current track on Last.fm (immediate-scrobbles the play session)
-    Love,
-    /// Un-love the current track on Last.fm
-    Unlove,
-    /// Toggle Last.fm scrobbling for this session
-    Scrobble,
-    /// Enable/disable crossfade with optional duration
-    Crossfade {
-        #[arg(
-            value_name = "ENABLED",
-            action = clap::ArgAction::Set,
-            value_parser = clap::builder::BoolishValueParser::new()
-        )]
-        enabled: bool,
-        duration_secs: Option<u8>,
-    },
-    /// Set the pre-gain applied to every sample, in dB
-    PreGain {
-        #[arg(value_name = "DB", allow_negative_numbers = true)]
-        db: f32,
+    /// Show current playback status
+    Status {
+        /// Redraw the status line continuously
+        #[arg(long)]
+        stream: bool,
     },
     /// Show the current queue
     Queue,
@@ -146,107 +96,17 @@ pub enum CliCommand {
     QueueAdd {
         #[arg(value_name = "PATH", value_hint = clap::ValueHint::AnyPath, num_args = 1..)]
         paths: Vec<String>,
-
         #[arg(long, value_name = "INDEX")]
         position: Option<u64>,
     },
     /// Remove a track from the queue by index
     QueueRemove { index: u64 },
-    /// Move a track within the queue
-    QueueMove { from: u64, to: u64 },
-    /// Clear the entire queue
+    /// Clear the queue
     QueueClear,
-    /// Replace the queue with the given tracks
-    QueueSet {
-        #[arg(value_name = "PATH", value_hint = clap::ValueHint::AnyPath, num_args = 1..)]
-        paths: Vec<String>,
-    },
-    /// Scan a directory for audio files and add to library
-    Scan {
-        #[arg(value_name = "DIR", value_hint = clap::ValueHint::DirPath)]
-        path: String,
-    },
-    /// List library tracks with optional filter and sort
-    Tracks {
-        filter: Option<String>,
-        sort: Option<String>,
-    },
-    /// List playlists
-    Playlists,
-    /// Create a new playlist
-    CreatePlaylist { name: String },
-    /// Delete a playlist
-    DeletePlaylist { id: i64 },
-    /// Remove duplicate tracks from a playlist
-    PlaylistDedup { playlist_id: i64 },
-    /// Remove playlist entries whose audio file is missing on disk
-    PlaylistDoctor { playlist_id: i64 },
-    /// Sort a playlist in place (field: title, artist, album, date)
-    PlaylistSort {
-        playlist_id: i64,
-        #[arg(long, value_name = "FIELD", default_value = "title")]
-        field: String,
-    },
-    /// Add tracks to a playlist
-    AddToPlaylist {
-        playlist_id: i64,
-        track_ids: Vec<i64>,
-    },
-    /// Import a playlist file (M3U8 or PLS)
-    ImportPlaylist {
-        #[arg(value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
-        path: String,
-        #[arg(long, value_name = "FORMAT", value_parser = ["m3u8", "pls"], default_value = "m3u8")]
-        format: String,
-    },
-    /// Export a playlist to a playlist file (M3U8 or PLS)
-    ExportPlaylist {
-        playlist_id: i64,
-        #[arg(value_name = "FILE", value_hint = clap::ValueHint::FilePath)]
-        path: String,
-        #[arg(long, value_name = "FORMAT", value_parser = ["m3u8", "pls"], default_value = "m3u8")]
-        format: String,
-    },
-    /// Show recently played tracks
-    Recent { count: u64 },
-    /// Sync metadata for a file or all library tracks
-    MetadataSync {
-        #[arg(value_name = "PATH", value_hint = clap::ValueHint::FilePath)]
-        path: Option<String>,
-    },
-    /// List favourite tracks
-    Favourites,
-    /// Add a track to favourites
-    FavouriteAdd { track_id: i64 },
-    /// Remove a track from favourites
-    FavouriteRemove { track_id: i64 },
-    /// Search for lyrics (format: "artist - title")
-    Lyrics { query: String },
-    /// Search the library
-    Search { query: String },
-    /// Search YouTube / SoundCloud (`scsearch:`) / Bilibili (`bilisearch:`)
-    /// / Mixcloud (`mcsearch:`) via the daemon and print matching tracks.
-    /// Additional providers can be added with `GTM_YT_HOSTS` (see
-    /// `gtm::shared::yt`).
-    YtSearch {
-        #[arg(value_name = "QUERY")]
-        query: String,
-    },
-    /// Show daemon status
-    Status {
-        /// Redraw the status line continuously
-        #[arg(long)]
-        stream: bool,
-        /// Show the current time-synced lyric line
-        ///
-        /// With `--stream`, fetched once per track rather than per tick.
-        #[arg(long)]
-        lyrics: bool,
-    },
-    /// Check daemon health
-    CheckHealth,
     /// Ping the daemon
     Ping,
+    /// Check daemon health
+    CheckHealth,
     /// Quit the daemon
     Quit,
     /// Manage config file
@@ -255,322 +115,6 @@ pub enum CliCommand {
         reset: bool,
         #[arg(long)]
         validate: bool,
-    },
-    /// Set a sleep timer in minutes
-    SleepTimer { minutes: u32 },
-    /// Cancel the current sleep timer
-    CancelSleepTimer,
-    /// List available audio output devices
-    AudioDevices,
-    /// Switch audio output device ("default" restores the system default; switching stops playback)
-    SetAudioDevice {
-        #[arg(value_name = "NAME")]
-        name: String,
-    },
-    /// Edit track metadata (field: title, artist, album, genre, year, track-number)
-    UpdateMetadata {
-        track_id: i64,
-        #[arg(value_name = "FIELD")]
-        field: String,
-        #[arg(value_name = "VALUE")]
-        value: String,
-    },
-    #[command(subcommand)]
-    /// Spotify integration commands
-    Spotify(SpotifyAction),
-    #[command(subcommand)]
-    /// Provider playlist commands (Spotify and any other registered source)
-    Playlist(ProviderPlaylist),
-    #[command(subcommand)]
-    /// Catalogue providers (Qobuz, Tidal, media servers, ...)
-    Providers(ProviderAction),
-    #[command(subcommand)]
-    /// Podcast subscriptions (RSS/Atom)
-    Podcast(PodcastAction),
-    #[command(subcommand)]
-    /// Internet radio directories (Radio Browser and cliamp)
-    Radio(RadioAction),
-    /// Walk through setting up integration sources that need credentials
-    /// (Spotify, Last.fm). With no SERVICE argument the
-    /// TUI service chooser opens; OAuth steps launch your browser and capture
-    /// the response.
-    Setup {
-        /// Service to configure: spotify | lastfm
-        #[arg(value_name = "SERVICE")]
-        service: Option<String>,
-        /// Service to configure (long form of the positional SERVICE)
-        #[arg(long, value_name = "SERVICE")]
-        api: Option<String>,
-        /// Keep the headless prompt-driven wizard instead of launching the TUI
-        #[arg(long)]
-        cli: bool,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum SpotifyAction {
-    /// Link a Spotify account with an access token
-    Connect { token: String },
-    /// Start the OAuth browser flow and wait for you to finish login
-    Login {
-        client_id: Option<String>,
-        /// Local redirect port (defaults to 8990 or $GTM_SPOTIFY_PORT)
-        #[clap(long)]
-        port: Option<u16>,
-    },
-    /// Unlink the Spotify account
-    Disconnect,
-    /// Show Spotify connection status
-    Status,
-    /// Sync Spotify playlists to the library
-    Sync,
-}
-
-#[derive(Subcommand)]
-pub enum PodcastAction {
-    /// Subscribe to an RSS/Atom feed
-    Add {
-        #[arg(value_name = "URL")]
-        url: String,
-    },
-    /// Unsubscribe from a feed
-    Remove {
-        #[arg(value_name = "FEED_ID")]
-        feed_id: String,
-    },
-    /// List subscribed feeds
-    List,
-    /// Show episodes of a feed
-    Episodes {
-        #[arg(value_name = "FEED_ID")]
-        feed_id: String,
-    },
-    /// Refresh feeds (optionally one by id)
-    Refresh {
-        #[arg(value_name = "FEED_ID")]
-        feed_id: Option<String>,
-    },
-    /// Play an episode from a feed
-    Play {
-        #[arg(value_name = "FEED_ID")]
-        feed_id: String,
-        #[arg(value_name = "EPISODE_INDEX")]
-        episode_index: usize,
-    },
-    /// Show podcast plugin status
-    Status,
-}
-
-/// Provider playlist commands. These go through the daemon's provider
-/// registry, so `--source` picks the provider and the verbs it refuses are
-/// reported rather than attempted.
-#[derive(Subcommand)]
-pub enum ProviderPlaylist {
-    /// List the registered playlist providers and the verbs they offer
-    Sources,
-    /// Create a playlist
-    Create {
-        #[arg(long, value_name = "SOURCE")]
-        source: String,
-        #[arg(long, value_name = "NAME")]
-        name: String,
-        #[arg(long, value_name = "DESCRIPTION")]
-        description: Option<String>,
-        /// Make the playlist public
-        #[arg(long)]
-        public: bool,
-    },
-    /// Rename a playlist
-    Rename {
-        #[arg(long, value_name = "SOURCE")]
-        source: String,
-        #[arg(long, value_name = "ID")]
-        id: String,
-        #[arg(long, value_name = "NAME")]
-        name: Option<String>,
-        #[arg(long, value_name = "DESCRIPTION")]
-        description: Option<String>,
-        /// Make the playlist public
-        #[arg(long)]
-        public: bool,
-        /// Make the playlist private
-        #[arg(long)]
-        private: bool,
-    },
-    /// Add tracks to a playlist
-    Add {
-        #[arg(long, value_name = "SOURCE")]
-        source: String,
-        #[arg(long, value_name = "ID")]
-        id: String,
-        /// Provider-native track reference (e.g. `spotify:track:...`)
-        #[arg(long, value_name = "TRACK", num_args = 1..)]
-        track: Vec<String>,
-        /// Insert at this position instead of appending
-        #[arg(long, value_name = "POSITION")]
-        at: Option<u32>,
-    },
-    /// Remove tracks from a playlist
-    Remove {
-        #[arg(long, value_name = "SOURCE")]
-        source: String,
-        #[arg(long, value_name = "ID")]
-        id: String,
-        /// Provider-native track reference (e.g. `spotify:track:...`)
-        #[arg(long, value_name = "TRACK", num_args = 1..)]
-        track: Vec<String>,
-        /// Position of the occurrence to remove; repeatable
-        #[arg(long, value_name = "POSITION")]
-        position: Vec<u32>,
-    },
-    /// Delete a playlist
-    Delete {
-        #[arg(long, value_name = "SOURCE")]
-        source: String,
-        #[arg(long, value_name = "ID")]
-        id: String,
-    },
-    /// Follow or unfollow a playlist
-    Subscribe {
-        #[arg(long, value_name = "SOURCE")]
-        source: String,
-        #[arg(long, value_name = "ID")]
-        id: String,
-        /// Unfollow instead of follow
-        #[arg(long)]
-        off: bool,
-    },
-    /// Copy a playlist into one the account owns
-    Copy {
-        #[arg(long, value_name = "SOURCE")]
-        source: String,
-        #[arg(long, value_name = "ID")]
-        id: String,
-        #[arg(long, value_name = "NAME")]
-        name: Option<String>,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum ProviderAction {
-    /// List catalogue providers and whether they are configured
-    ///
-    /// `list` is an alias because that is the verb every other listing in this
-    /// CLI accepts, and making the provider command the exception helps nobody.
-    #[command(alias = "list")]
-    Sources,
-    /// Search one provider's catalogue
-    Search {
-        #[arg(value_name = "PROVIDER")]
-        provider: String,
-        #[arg(value_name = "QUERY")]
-        query: String,
-        #[arg(long, default_value_t = 25)]
-        limit: u16,
-    },
-    /// List a provider's playlists, albums or saved shows
-    Playlists {
-        #[arg(value_name = "PROVIDER")]
-        provider: String,
-    },
-    /// List the tracks in one provider playlist
-    Tracks {
-        #[arg(value_name = "PROVIDER")]
-        provider: String,
-        #[arg(value_name = "ID")]
-        id: String,
-    },
-    /// Play a provider track
-    Play {
-        #[arg(value_name = "PROVIDER")]
-        provider: String,
-        #[arg(value_name = "ID")]
-        id: String,
-        /// Display title (defaults to the provider's name for the row)
-        #[arg(long)]
-        title: Option<String>,
-        #[arg(long, default_value = "")]
-        artist: String,
-        #[arg(long, default_value = "")]
-        album: String,
-        #[arg(long, default_value_t = 0.0)]
-        duration: f64,
-    },
-    /// Save a provider track to the account's likes
-    Like {
-        #[arg(value_name = "PROVIDER")]
-        provider: String,
-        #[arg(value_name = "ID")]
-        id: String,
-        #[arg(long, default_value = "")]
-        title: String,
-    },
-}
-
-#[derive(Subcommand)]
-pub enum RadioAction {
-    /// Search the Radio Browser directory
-    Search {
-        #[arg(value_name = "QUERY")]
-        query: String,
-        #[arg(long, default_value_t = 25)]
-        limit: u16,
-    },
-    /// Show top-voted stations
-    Top {
-        #[arg(long, default_value_t = 25)]
-        limit: u16,
-    },
-    /// List cliamp radio channels
-    Cliamp {
-        /// Ignore the daemon's cached channel list and fetch it again
-        #[arg(long)]
-        refresh: bool,
-    },
-    /// Play a station by its Radio Browser or cliamp id
-    Play {
-        #[arg(value_name = "STATION_ID")]
-        station_id: String,
-        #[arg(value_name = "NAME", required = false)]
-        station_name: Option<String>,
-    },
-    /// Show the most-used directory tags
-    Tags {
-        #[arg(long, default_value_t = 25)]
-        limit: u16,
-    },
-    /// Show the most-used directory countries
-    Countries {
-        #[arg(long, default_value_t = 25)]
-        limit: u16,
-    },
-    /// List stations carrying a tag
-    Tag {
-        #[arg(value_name = "TAG")]
-        tag: String,
-        #[arg(long, default_value_t = 25)]
-        limit: u16,
-    },
-    /// List stations from a country
-    Country {
-        #[arg(value_name = "COUNTRY")]
-        country: String,
-        #[arg(long, default_value_t = 25)]
-        limit: u16,
-    },
-    /// List custom stations from radios.toml
-    List,
-    /// Add a custom station to radios.toml
-    Add {
-        #[arg(value_name = "NAME")]
-        name: String,
-        #[arg(value_name = "URL")]
-        url: String,
-    },
-    /// Remove a custom station by index or name
-    Rm {
-        #[arg(value_name = "INDEX_OR_NAME")]
-        selector: String,
     },
 }
 
@@ -596,30 +140,10 @@ pub fn run(socket: Option<String>, json: bool, verbose: bool, cmd: &CliCommand) 
                     std::process::exit(1);
                 }
             }
-        } else {
-            if let Err(e) = open_config() {
-                eprintln!("error: {e}");
-                std::process::exit(1);
-            }
-        }
-        return;
-    }
-
-    // `gtm setup` (without --cli) drops into the interactive TUI service
-    // chooser. Run it directly on the main thread: launching a tokio runtime
-    // here and then `block_on`-ing another one inside the TUI would panic.
-    if let CliCommand::Setup {
-        service,
-        api,
-        cli: false,
-    } = cmd
-    {
-        let service_arg = service.clone().or_else(|| api.clone());
-        if let Err(e) = run_tui(socket, service_arg) {
+        } else if let Err(e) = open_config() {
             eprintln!("error: {e}");
             std::process::exit(1);
         }
-        println!("setup finished");
         return;
     }
 
@@ -630,10 +154,6 @@ pub fn run(socket: Option<String>, json: bool, verbose: bool, cmd: &CliCommand) 
             .map(PathBuf::from)
             .unwrap_or_else(resolve_command_socket);
 
-        // Auto-start the daemon so a fresh install can run any command
-        // (play, device list, etc.) without a separate daemon launch step.
-        // `ping` is the health check itself and `quit` must not spawn the
-        // daemon it is meant to stop, so those two skip the ensure step.
         if !matches!(cmd, CliCommand::Ping | CliCommand::Quit) {
             ensure_daemon_running(&socket_path).await?;
         }
@@ -645,10 +165,6 @@ pub fn run(socket: Option<String>, json: bool, verbose: bool, cmd: &CliCommand) 
         match cmd {
             CliCommand::Play { path, start_pos } => {
                 let pos = start_pos.unwrap_or(0.0);
-                // The daemon outlives the client and resolves relative paths
-                // against its own cwd, not ours: forwarding the argument
-                // verbatim turned `./track.flac` into ENOENT whenever the
-                // daemon had been started from another directory.
                 let path = match std::path::absolute(path) {
                     Ok(p) => p.to_string_lossy().into_owned(),
                     Err(_) => path.clone(),
@@ -656,569 +172,69 @@ pub fn run(socket: Option<String>, json: bool, verbose: bool, cmd: &CliCommand) 
                 if !std::path::Path::new(&path).exists() {
                     Err(format!("no such file: {path}"))
                 } else {
-                    client
-                        .play(&path, pos)
-                        .await
-                        .map(|()| "ok".to_string())
-                        .map_err(|e| e.to_string())
+                    client.play(&path, pos).await.map(|()| "ok".into()).map_err(|e| e.to_string())
                 }
             }
             CliCommand::Stream { url } => client
                 .play_stream(url)
                 .await
-                .map(|()| "ok".to_string())
+                .map(|()| "ok".into())
                 .map_err(|e| e.to_string()),
-            CliCommand::PlayPause => client
-                .play_pause()
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::Pause => client
-                .pause()
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::Stop => client
-                .stop()
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
+            CliCommand::PlayPause => client.play_pause().await.map(|()| "ok".into()).map_err(|e| e.to_string()),
+            CliCommand::Pause => client.pause().await.map(|()| "ok".into()).map_err(|e| e.to_string()),
+            CliCommand::Stop => client.stop().await.map(|()| "ok".into()).map_err(|e| e.to_string()),
             CliCommand::Next => {
                 client.next().await.map_err(|e| e.to_string())?;
                 if verbose {
                     match client.get_status().await {
-                        Ok(state) => {
-                            if let Some(ref t) = state.current_track {
-                                Ok(format!(
-                                    "Now Playing: {}\n{} - {}",
-                                    t.title, t.artist, t.album
-                                ))
-                            } else {
-                                Ok("Stopped".to_string())
-                            }
-                        }
-                        Err(_) => Ok("ok".to_string()),
+                        Ok(state) => Ok(format_now_playing(&state)),
+                        Err(_) => Ok("ok".into()),
                     }
                 } else {
-                    Ok("ok".to_string())
+                    Ok("ok".into())
                 }
             }
             CliCommand::Prev => {
                 client.prev().await.map_err(|e| e.to_string())?;
                 if verbose {
                     match client.get_status().await {
-                        Ok(state) => {
-                            if let Some(ref t) = state.current_track {
-                                Ok(format!(
-                                    "Now Playing: {}\n{} - {}",
-                                    t.title, t.artist, t.album
-                                ))
-                            } else {
-                                Ok("Stopped".to_string())
-                            }
-                        }
-                        Err(_) => Ok("ok".to_string()),
+                        Ok(state) => Ok(format_now_playing(&state)),
+                        Err(_) => Ok("ok".into()),
                     }
                 } else {
-                    Ok("ok".to_string())
+                    Ok("ok".into())
                 }
             }
-            CliCommand::Seek { position_secs } => client
-                .seek(*position_secs)
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
+            CliCommand::Seek { position_secs } => client.seek(*position_secs).await.map(|()| "ok".into()).map_err(|e| e.to_string()),
             CliCommand::Volume { volume } => match volume {
                 Some(v) => {
                     client.set_volume(*v).await.map_err(|e| e.to_string())?;
-                    if verbose {
-                        Ok(format!("Volume: {}%", v))
-                    } else {
-                        Ok("ok".to_string())
-                    }
+                    if verbose { Ok(format!("Volume: {v}%")) } else { Ok("ok".into()) }
                 }
-                None => {
-                    let v = client.get_volume().await.map_err(|e| e.to_string())?;
-                    Ok(format!("{v}"))
-                }
+                None => Ok(format!("{}", client.get_volume().await.map_err(|e| e.to_string())?)),
             },
-            CliCommand::EqPresets => {
-                let presets = client.list_eq_presets().await.map_err(|e| e.to_string())?;
-                if json {
-                    serde_json::to_string_pretty(&presets).map_err(|e| e.to_string())
-                } else {
-                    Ok(presets.join("\n"))
-                }
-            }
-            CliCommand::Shuffle => client
-                .toggle_shuffle()
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
+            CliCommand::Shuffle => client.toggle_shuffle().await.map(|()| "ok".into()).map_err(|e| e.to_string()),
             CliCommand::Repeat { mode } => {
                 let mode: RepeatMode = mode.parse().map_err(|e: String| e)?;
-                client
-                    .cycle_repeat(mode)
-                    .await
-                    .map(|()| "ok".to_string())
-                    .map_err(|e| e.to_string())
+                client.cycle_repeat(mode).await.map(|()| "ok".into()).map_err(|e| e.to_string())
             }
-            CliCommand::Mute => client
-                .toggle_mute()
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::Mono => {
-                let st = client.get_status().await.map_err(|e| e.to_string())?;
-                client
-                    .set_mono(!st.mono)
-                    .await
-                    .map(|()| format!("ok (mono {})", if !st.mono { "on" } else { "off" }))
-                    .map_err(|e| e.to_string())
-            }
-            CliCommand::Love => client
-                .lastfm()
-                .love()
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::Unlove => client
-                .lastfm()
-                .unlove()
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::Scrobble => {
-                let st = client.lastfm().status().await.map_err(|e| e.to_string())?;
-                client
-                    .lastfm()
-                    .set_config(!st.enabled, None, None, None, None, None)
-                    .await
-                    .map(|()| format!("ok (scrobbling {})", if !st.enabled { "on" } else { "off" }))
-                    .map_err(|e| e.to_string())
-            }
-            CliCommand::Crossfade {
-                enabled,
-                duration_secs,
-            } => {
-                let dur = duration_secs.unwrap_or(7);
-                client
-                    .crossfade(*enabled, dur)
-                    .await
-                    .map(|()| "ok".to_string())
-                    .map_err(|e| e.to_string())
-            }
-            CliCommand::PreGain { db } => {
-                // Rejected here rather than silently clamped by the mixer, so a
-                // typo in a script fails where it can be seen instead of
-                // quietly becoming something else.
-                if !db.is_finite() || *db < PRE_GAIN_MIN_DB || *db > PRE_GAIN_MAX_DB {
-                    return Err(format!(
-                        "pre-gain must be between {PRE_GAIN_MIN_DB:.0} and \
-                         {PRE_GAIN_MAX_DB:.0} dB"
-                    ));
-                }
-                client
-                    .set_pre_gain(*db)
-                    .await
-                    .map(|()| format!("ok (pre-gain {db:+.0} dB)"))
-                    .map_err(|e| e.to_string())
-            }
-            CliCommand::Queue => {
-                let res = client.queue().list().await.map_err(|e| e.to_string())?;
-                if json {
-                    serde_json::to_string_pretty(&res).map_err(|e| e.to_string())
-                } else {
-                    Ok(format!("{res:?}"))
-                }
-            }
-            CliCommand::QueueAdd { paths, position } => client
-                .queue()
-                .add_many(paths.clone(), *position)
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::QueueRemove { index } => client
-                .queue()
-                .remove(*index)
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::QueueMove { from, to } => client
-                .queue()
-                .reorder(*from, *to)
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::QueueClear => client
-                .queue()
-                .clear()
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::QueueSet { paths } => client
-                .queue()
-                .set(
-                    paths
-                        .iter()
-                        .map(|p| TrackInfo {
-                            path: p.clone(),
-                            ..Default::default()
-                        })
-                        .collect(),
-                )
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::Scan { path } => client
-                .library()
-                .scan(path)
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::Tracks { filter, sort } => {
-                let res = client
-                    .library()
-                    .get_tracks(filter.clone(), sort.clone())
-                    .await
-                    .map_err(|e| e.to_string())?;
-                if json {
-                    serde_json::to_string_pretty(&res).map_err(|e| e.to_string())
-                } else {
-                    Ok(format!("{res:?}"))
-                }
-            }
-            CliCommand::Playlists => {
-                let res = client
-                    .library()
-                    .get_playlists()
-                    .await
-                    .map_err(|e| e.to_string())?;
-                if json {
-                    serde_json::to_string_pretty(&res).map_err(|e| e.to_string())
-                } else {
-                    Ok(format!("{res:?}"))
-                }
-            }
-            CliCommand::CreatePlaylist { name } => client
-                .library()
-                .create_playlist(name)
-                .await
-                .map(|playlists| format!("created {} playlist", playlists.len()))
-                .map_err(|e| e.to_string()),
-            CliCommand::DeletePlaylist { id } => client
-                .library()
-                .delete_playlist(*id)
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::PlaylistDedup { playlist_id } => client
-                .library()
-                .playlist_dedup(*playlist_id)
-                .await
-                .map(|removed| format!("removed {removed} duplicate entries"))
-                .map_err(|e| e.to_string()),
-            CliCommand::PlaylistDoctor { playlist_id } => client
-                .library()
-                .playlist_doctor(*playlist_id)
-                .await
-                .map(|removed| format!("removed {removed} broken entries"))
-                .map_err(|e| e.to_string()),
-            CliCommand::PlaylistSort { playlist_id, field } => client
-                .library()
-                .playlist_sort(*playlist_id, field)
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::AddToPlaylist {
-                playlist_id,
-                track_ids,
-            } => client
-                .library()
-                .add_to_playlist(*playlist_id, track_ids.clone())
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::ImportPlaylist { path, format } => {
-                let format = parse_format(format)?;
-                client
-                    .library()
-                    .import_playlist(path, format)
-                    .await
-                    .map(|playlists| format!("imported {} playlist", playlists.len()))
-                    .map_err(|e| e.to_string())
-            }
-            CliCommand::ExportPlaylist {
-                playlist_id,
-                path,
-                format,
-            } => {
-                let format = parse_format(format)?;
-                client
-                    .library()
-                    .export_playlist(*playlist_id, path, format)
-                    .await
-                    .map(|()| "ok".to_string())
-                    .map_err(|e| e.to_string())
-            }
-            CliCommand::Recent { count } => {
-                let res = client
-                    .library()
-                    .get_recent(*count)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                if json {
-                    serde_json::to_string_pretty(&res).map_err(|e| e.to_string())
-                } else {
-                    Ok(format!("{res:?}"))
-                }
-            }
-            CliCommand::MetadataSync { path } => {
-                client
-                    .library()
-                    .sync_metadata(path.clone())
-                    .await
-                    .map_err(|e| e.to_string())?;
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1800);
-                loop {
-                    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-                    let st = client
-                        .library()
-                        .sync_status()
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    if !st.running {
-                        if json {
-                            return serde_json::to_string_pretty(&st).map_err(|e| e.to_string());
-                        }
-                        return Ok(format!(
-                            "Metadata synced: {}/{} tracks",
-                            st.synced, st.total
-                        ));
-                    }
-                    if std::time::Instant::now() >= deadline {
-                        return Err("metadata sync timed out".to_string());
-                    }
-                }
-            }
-            CliCommand::Favourites => {
-                let res = client
-                    .favourites()
-                    .list()
-                    .await
-                    .map_err(|e| e.to_string())?;
-                if json {
-                    serde_json::to_string_pretty(&res).map_err(|e| e.to_string())
-                } else {
-                    Ok(format!("{res:?}"))
-                }
-            }
-            CliCommand::FavouriteAdd { track_id } => client
-                .favourites()
-                .add(*track_id)
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::FavouriteRemove { track_id } => client
-                .favourites()
-                .remove(*track_id)
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::Search { query } => {
-                let res = client.search(query).await.map_err(|e| e.to_string())?;
-                if json {
-                    serde_json::to_string_pretty(&res).map_err(|e| e.to_string())
-                } else {
-                    Ok(format!("{res:?}"))
-                }
-            }
-            CliCommand::YtSearch { query } => {
-                let _ = client
-                    .yt()
-                    .search(query, None)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                let mut results: Option<Vec<crate::shared::YTSearchResult>> = None;
-                let mut last_err: Option<String> = None;
-                for _ in 0..40 {
-                    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                    match client.yt().poll().await {
-                        Ok(DaemonRes::YtSearchResults {
-                            query: got_query,
-                            results: r,
-                        }) if got_query == *query => {
-                            results = Some(r);
-                            break;
-                        }
-                        Ok(DaemonRes::Ok) => {}
-                        Ok(other) => {
-                            last_err = Some(format!("unexpected daemon response: {other:?}"));
-                            break;
-                        }
-                        Err(e) => {
-                            last_err = Some(e.to_string());
-                            break;
-                        }
-                    }
-                }
-                let results = results.ok_or_else(|| {
-                    last_err.unwrap_or_else(|| "youtube search timed out".to_string())
-                })?;
-                if json {
-                    serde_json::to_string_pretty(&results).map_err(|e| e.to_string())
-                } else {
-                    let mut out = String::new();
-                    for (i, r) in results.iter().enumerate() {
-                        if r.is_playlist {
-                            out +=
-                                &format!("{:>2}. [playlist] {}\n     {}\n", i + 1, r.title, r.url);
-                        } else {
-                            out += &format!(
-                                "{:>2}. {} - {}\n     {}\n",
-                                i + 1,
-                                r.title,
-                                r.channel,
-                                r.url
-                            );
-                        }
-                    }
-                    Ok(out)
-                }
-            }
-            CliCommand::Lyrics { query } => {
-                let (artist, title) = match query.split_once(" - ") {
-                    Some((a, t)) => (a.trim().to_string(), t.trim().to_string()),
-                    None => (String::new(), query.trim().to_string()),
-                };
-                // A free-form "artist - title" query carries no album or
-                // duration, so the daemon falls back to the loose search.
-                let lyrics = client
-                    .lyrics()
-                    .search(&artist, &title, None, None)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                if json {
-                    serde_json::to_string_pretty(&lyrics).map_err(|e| e.to_string())
-                } else {
-                    match lyrics {
-                        Some(l) => {
-                            if l.lines.is_empty() {
-                                let artist_str = if let Some(ref a) = l.artist {
-                                    format!("{a}: ")
-                                } else {
-                                    String::new()
-                                };
-                                Ok(format!(
-                                    "Found lyrics metadata for {}{} but no timed lines.",
-                                    artist_str,
-                                    l.title.as_ref().unwrap_or(&String::from("unknown"))
-                                ))
-                            } else {
-                                let mut out = String::new();
-                                if let Some(ref t) = l.title {
-                                    out += &format!("{t}\n");
-                                }
-                                if let Some(ref a) = l.artist {
-                                    out += &format!("{a}\n");
-                                }
-                                out += &"-".repeat(32);
-                                out += "\n";
-                                for line in &l.lines {
-                                    if line.timestamp < 0.0 {
-                                        out += &line.text;
-                                        out += "\n";
-                                    } else {
-                                        let mm = (line.timestamp / 60.0) as u64;
-                                        let ss = line.timestamp % 60.0;
-                                        out += &format!("[{:02}:{:05.2}] {}\n", mm, ss, line.text);
-                                    }
-                                }
-                                Ok(out)
-                            }
-                        }
-                        None => Ok("No lyrics found.".to_string()),
-                    }
-                }
-            }
-            CliCommand::Status {
-                stream,
-                lyrics: want_lyrics,
-            } => {
+            CliCommand::Mute => client.toggle_mute().await.map(|()| "ok".into()).map_err(|e| e.to_string()),
+            CliCommand::Status { stream } => {
                 if *stream {
-                    let mut last_track: Option<String> = None;
-                    let mut lyrics: Option<LrcData> = None;
                     loop {
                         let state = client.get_status().await.map_err(|e| e.to_string())?;
                         let elapsed = state.time_pos as u64;
                         let dur = state.duration as u64;
                         let track = state.current_track.as_ref().map_or("No track".into(), |t| {
                             let title = t.display_title();
-                            if t.artist.is_empty() {
-                                title
-                            } else {
-                                format!("{} - {}", t.artist, title)
-                            }
+                            if t.artist.is_empty() { title } else { format!("{} - {}", t.artist, title) }
                         });
-                        let vol = state.volume;
-                        // (Re)fetch time-synced lyrics whenever the track changes.
-                        let track_key = state.current_track.as_ref().map(|t| t.path.clone());
-                        if track_key != last_track {
-                            last_track = track_key;
-                            // Gated on the flag. A stream is a long-lived
-                            // process asking the daemon twice per second for
-                            // two things it did not ask to be told about.
-                            lyrics = if *want_lyrics {
-                                match &state.current_track {
-                                    Some(t) => client
-                                        .lyrics()
-                                        .search(
-                                            &t.artist,
-                                            &t.title,
-                                            Some(t.album.as_str()).filter(|a| !a.trim().is_empty()),
-                                            (t.duration > 0.0).then_some(t.duration),
-                                        )
-                                        .await
-                                        .ok()
-                                        .flatten(),
-                                    None => None,
-                                }
-                            } else {
-                                None
-                            };
-                        }
-                        // Pick the active lyric line for the current position.
-                        let active = lyrics.as_ref().and_then(|l| {
-                            let pos = state.time_pos;
-                            l.lines
-                                .iter()
-                                .rfind(|ln| ln.timestamp >= 0.0 && ln.timestamp <= pos)
-                                .or_else(|| l.lines.iter().find(|ln| ln.timestamp < 0.0))
-                                .map(|ln| ln.text.trim().to_string())
-                        });
-                        // Full-frame redraw rather than the `\r` + cursor-up
-                        // partial overwrite. Once the frame is a variable number of
-                        // rows tall, a partial one leaves the tail of a
-                        // taller previous frame on screen; home-and-clear is
-                        // the only correct one.
-                        //
-                        // The playback status leads the line, so a
-                        // long-running `status --stream` always says whether it
-                        // is playing or paused -- the one fact a status line
-                        // exists for. The
-                        // plain-text labels are used rather than the coloured
-                        // ones the one-shot path prints, because this frame is
-                        // cleared and rewritten twice a second.
                         let status_label = match state.status {
                             PlaybackStatus::Playing => "Playing",
                             PlaybackStatus::Paused => "Paused",
                             PlaybackStatus::Stopped => "Stopped",
                         };
-                        print!("\x1b[H\x1b[J");
-                        print!("{status_label}: {track} | {elapsed}s / {dur}s | {vol}%");
-                        if let Some(line) = active {
-                            print!("\n  ♪ {}", line);
-                        }
+                        print!("\x1b[H\x1b[J{status_label}: {track} | {elapsed}s / {dur}s | {}%", state.volume);
                         std::io::stdout().flush().ok();
                         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     }
@@ -1227,112 +243,25 @@ pub fn run(socket: Option<String>, json: bool, verbose: bool, cmd: &CliCommand) 
                     if json {
                         serde_json::to_string_pretty(&state).map_err(|e| e.to_string())
                     } else {
-                        let status_str = match state.status {
-                            PlaybackStatus::Playing => "\x1b[32m▶ Playing\x1b[0m",
-                            PlaybackStatus::Paused => "\x1b[33m⏸ Paused\x1b[0m",
-                            PlaybackStatus::Stopped => "\x1b[31m⏹ Stopped\x1b[0m",
-                        };
-                        let track_str = state
-                            .current_track
-                            .as_ref()
-                            .map(|t| {
-                                let title = match t.display_title() {
-                                    s if s.is_empty() => "Unknown".to_string(),
-                                    s => s,
-                                };
-                                if t.artist.is_empty() {
-                                    title
-                                } else {
-                                    format!("{}: {}", t.artist, title)
-                                }
-                            })
-                            .unwrap_or_else(|| "No track".into());
-                        let vol_str = format!("\x1b[36m{}%\x1b[0m", state.volume);
-                        let repeat_str = format!("{:?}", state.repeat);
-                        let shuffle_str = if state.shuffle {
-                            "\x1b[32mOn\x1b[0m"
-                        } else {
-                            "Off"
-                        };
-                        let queue_str = format!(
-                            "{} tracks, cursor {}/{}",
-                            state.queue.len(),
-                            state.queue_cursor + 1,
-                            state.queue.len().max(1)
-                        );
-                        let mute_str = if state.mute {
-                            "\x1b[33mMuted\x1b[0m"
-                        } else {
-                            "Unmuted"
-                        };
-                        let cover_line = match state.current_track.as_ref() {
-                            Some(t) => t.cover_path.clone().unwrap_or_else(|| "none".into()),
-                            None => "no track".into(),
-                        };
-                        // `--lyrics` appends the line being sung at the current
-                        // position, fetched once.
-                        let lyric_line = if *want_lyrics {
-                            let active = match state.current_track.as_ref() {
-                                Some(t) => client
-                                    .lyrics()
-                                    .search(
-                                        &t.artist,
-                                        &t.title,
-                                        Some(t.album.as_str()).filter(|a| !a.trim().is_empty()),
-                                        (t.duration > 0.0).then_some(t.duration),
-                                    )
-                                    .await
-                                    .ok()
-                                    .flatten()
-                                    .and_then(|l| {
-                                        let pos = state.time_pos;
-                                        l.lines
-                                            .iter()
-                                            .rfind(|ln| ln.timestamp >= 0.0 && ln.timestamp <= pos)
-                                            .or_else(|| {
-                                                l.lines.iter().find(|ln| ln.timestamp < 0.0)
-                                            })
-                                            .map(|ln| ln.text.trim().to_string())
-                                    }),
-                                None => None,
-                            };
-                            active
-                                .map(|line| format!("\n\x1b[1mLyric:\x1b[0m    ♪ {line}"))
-                                .unwrap_or_default()
-                        } else {
-                            String::new()
-                        };
-                        Ok(format!(
-                            "\x1b[1mPlayback:\x1b[0m  {}\n\
-                         \x1b[1mTrack:\x1b[0m    {}\n\
-                         \x1b[1mCover:\x1b[0m    {cover_line}\n\
-                         \x1b[1mVolume:\x1b[0m   {} ({})\n\
-                         \x1b[1mRepeat:\x1b[0m   {}\n\
-                         \x1b[1mShuffle:\x1b[0m  {}\n\
-                         \x1b[1mQueue:\x1b[0m    {}{lyric_line}",
-                            status_str,
-                            track_str,
-                            vol_str,
-                            mute_str,
-                            repeat_str,
-                            shuffle_str,
-                            queue_str
-                        ))
+                        Ok(format_status(&state))
                     }
                 }
             }
-            CliCommand::Ping => {
-                client.ping().await.map_err(|e| e.to_string())?;
-                Ok("pong".into())
+            CliCommand::Queue => {
+                let res = client.queue().list().await.map_err(|e| e.to_string())?;
+                if json { serde_json::to_string_pretty(&res).map_err(|e| e.to_string()) } else { Ok(format!("{res:?}")) }
             }
+            CliCommand::QueueAdd { paths, position } => client.queue().add_many(paths.clone(), *position).await.map(|()| "ok".into()).map_err(|e| e.to_string()),
+            CliCommand::QueueRemove { index } => client.queue().remove(*index).await.map(|()| "ok".into()).map_err(|e| e.to_string()),
+            CliCommand::QueueClear => client.queue().clear().await.map(|()| "ok".into()).map_err(|e| e.to_string()),
+            CliCommand::Ping => { client.ping().await.map_err(|e| e.to_string())?; Ok("pong".into()) }
             CliCommand::CheckHealth => {
                 let report = client.check_health().await.map_err(|e| e.to_string())?;
                 if json {
                     serde_json::to_string_pretty(&report).map_err(|e| e.to_string())
                 } else {
                     let mut out = format!(
-                        "\x1b[1mgtm Health Report\x1b[0m (v{})\n\
-                         Daemon uptime: {}\n",
+                        "\x1b[1mgtm Health Report\x1b[0m (v{})\nDaemon uptime: {}\n",
                         report.version,
                         format_uptime(report.daemon_uptime_secs)
                     );
@@ -1343,566 +272,15 @@ pub fn run(socket: Option<String>, json: bool, verbose: bool, cmd: &CliCommand) 
                             HealthStatus::Error => "\x1b[31m✗\x1b[0m",
                         };
                         out += &format!("  {icon} \x1b[1m{}\x1b[0m", c.name);
-                        if let Some(ref msg) = c.message {
-                            out += &format!(": {msg}");
-                        }
-                        if let Some(uptime) = c.uptime_secs {
-                            out += &format!(" (uptime {:.0}s)", uptime);
-                        }
+                        if let Some(ref msg) = c.message { out += &format!(": {msg}"); }
+                        if let Some(uptime) = c.uptime_secs { out += &format!(" (uptime {:.0}s)", uptime); }
                         out += "\n";
                     }
                     Ok(out)
                 }
             }
-            CliCommand::Quit => client
-                .quit()
-                .await
-                .map(|()| "ok".to_string())
-                .map_err(|e| e.to_string()),
+            CliCommand::Quit => client.quit().await.map(|()| "ok".into()).map_err(|e| e.to_string()),
             CliCommand::Config { .. } => unreachable!(),
-            CliCommand::SleepTimer { minutes } => client
-                .set_sleep_timer(*minutes, true)
-                .await
-                .map(|()| format!("sleep timer set for {minutes} min"))
-                .map_err(|e| e.to_string()),
-            CliCommand::CancelSleepTimer => client
-                .cancel_sleep_timer()
-                .await
-                .map(|()| "sleep timer cancelled".to_string())
-                .map_err(|e| e.to_string()),
-            CliCommand::AudioDevices => {
-                let devices = client
-                    .list_audio_devices()
-                    .await
-                    .map_err(|e| e.to_string())?;
-                if devices.is_empty() {
-                    Ok("no output devices listed by this backend".to_string())
-                } else {
-                    Ok(devices.join("\n"))
-                }
-            }
-            CliCommand::SetAudioDevice { name } => {
-                if name == "default" {
-                    client
-                        .set_audio_device(None)
-                        .await
-                        .map(|()| "switched to default output device".to_string())
-                        .map_err(|e| e.to_string())
-                } else {
-                    client
-                        .set_audio_device(Some(name.clone()))
-                        .await
-                        .map(|()| format!("switched output device to '{name}'"))
-                        .map_err(|e| e.to_string())
-                }
-            }
-            CliCommand::UpdateMetadata {
-                track_id,
-                field,
-                value,
-            } => {
-                let mut patch = MetadataPatch::default();
-                match field.as_str() {
-                    "title" => patch.title = Some(value.clone()),
-                    "artist" => patch.artist = Some(value.clone()),
-                    "album" => patch.album = Some(value.clone()),
-                    "genre" => patch.genre = Some(value.clone()),
-                    "year" => {
-                        patch.year = Some(
-                            value
-                                .trim()
-                                .parse::<i32>()
-                                .map_err(|_| format!("invalid year: {value}"))?,
-                        )
-                    }
-                    "track-number" | "track_number" => {
-                        patch.track_number = Some(
-                            value
-                                .trim()
-                                .parse::<i32>()
-                                .map_err(|_| format!("invalid track number: {value}"))?,
-                        )
-                    }
-                    other => {
-                        return Err(format!(
-                            "unknown field `{other}` (use title, artist, album, genre, year, \
-                             track-number)"
-                        ));
-                    }
-                }
-                if patch == MetadataPatch::default() {
-                    return Err("no field to update: pass a supported FIELD".to_string());
-                }
-                client
-                    .library()
-                    .update_metadata(*track_id, patch)
-                    .await
-                    .map(|()| "metadata updated".to_string())
-                    .map_err(|e| e.to_string())
-            }
-            CliCommand::Spotify(action) => match action {
-                SpotifyAction::Connect { token } => {
-                    let st = client
-                        .spotify()
-                        .set_token(token)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    Ok(format_spotify_status(&st))
-                }
-                SpotifyAction::Login { client_id, port } => {
-                    spotify_login(&client, client_id.clone(), *port).await
-                }
-                SpotifyAction::Disconnect => {
-                    let st = client.spotify().clear().await.map_err(|e| e.to_string())?;
-                    Ok(format_spotify_status(&st))
-                }
-                SpotifyAction::Status => {
-                    let st = client.spotify().status().await.map_err(|e| e.to_string())?;
-                    Ok(format_spotify_status(&st))
-                }
-                SpotifyAction::Sync => client
-                    .spotify()
-                    .sync()
-                    .await
-                    .map(|()| "spotify playlists synced".to_string())
-                    .map_err(|e| e.to_string()),
-            },
-            CliCommand::Playlist(action) => match action {
-                ProviderPlaylist::Sources => {
-                    let sources = client
-                        .playlists()
-                        .sources()
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    if json {
-                        serde_json::to_string_pretty(&sources).map_err(|e| e.to_string())
-                    } else {
-                        Ok(sources
-                            .iter()
-                            .map(format_playlist_source)
-                            .collect::<Vec<_>>()
-                            .join("\n"))
-                    }
-                }
-                ProviderPlaylist::Create {
-                    source,
-                    name,
-                    description,
-                    public,
-                } => {
-                    let spec = NewPlaylist {
-                        name: Some(name.clone()),
-                        description: description.clone(),
-                        public: public.then_some(true),
-                    };
-                    let id = client
-                        .playlists()
-                        .create(source, spec)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    Ok(id.unwrap_or_default())
-                }
-                ProviderPlaylist::Rename {
-                    source,
-                    id,
-                    name,
-                    description,
-                    public,
-                    private,
-                } => {
-                    let spec = NewPlaylist {
-                        name: name.clone(),
-                        description: description.clone(),
-                        public: if *public {
-                            Some(true)
-                        } else if *private {
-                            Some(false)
-                        } else {
-                            None
-                        },
-                    };
-                    client
-                        .playlists()
-                        .rename(PlaylistId::new(source, id.clone()), spec)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    Ok("ok".to_string())
-                }
-                ProviderPlaylist::Add {
-                    source,
-                    id,
-                    track,
-                    at,
-                } => {
-                    let items = track
-                        .iter()
-                        .map(|t| PlaylistItem {
-                            item: t.clone(),
-                            title: None,
-                            artist: None,
-                        })
-                        .collect();
-                    client
-                        .playlists()
-                        .add(PlaylistId::new(source, id.clone()), items, *at)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    Ok("ok".to_string())
-                }
-                ProviderPlaylist::Remove {
-                    source,
-                    id,
-                    track,
-                    position,
-                } => {
-                    let slots = track
-                        .iter()
-                        .map(|t| PlaylistSlot {
-                            item: PlaylistItem {
-                                item: t.clone(),
-                                title: None,
-                                artist: None,
-                            },
-                            positions: position.clone(),
-                        })
-                        .collect();
-                    client
-                        .playlists()
-                        .remove(PlaylistId::new(source, id.clone()), slots)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    Ok("ok".to_string())
-                }
-                ProviderPlaylist::Delete { source, id } => {
-                    client
-                        .playlists()
-                        .delete(PlaylistId::new(source, id.clone()))
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    Ok("ok".to_string())
-                }
-                ProviderPlaylist::Subscribe { source, id, off } => {
-                    client
-                        .playlists()
-                        .subscribe(PlaylistId::new(source, id.clone()), !off)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    Ok("ok".to_string())
-                }
-                ProviderPlaylist::Copy { source, id, name } => {
-                    let copied = client
-                        .playlists()
-                        .copy(PlaylistId::new(source, id.clone()), name.as_deref())
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    Ok(copied.unwrap_or_default())
-                }
-            },
-            CliCommand::Providers(action) => match action {
-                ProviderAction::Sources => {
-                    let sources = client
-                        .providers()
-                        .sources()
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    if json {
-                        serde_json::to_string_pretty(&sources).map_err(|e| e.to_string())
-                    } else {
-                        Ok(sources
-                            .iter()
-                            .map(format_provider_source)
-                            .collect::<Vec<_>>()
-                            .join("\n"))
-                    }
-                }
-                ProviderAction::Search {
-                    provider,
-                    query,
-                    limit,
-                } => {
-                    let tracks = client
-                        .providers()
-                        .search(provider, query, *limit)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    if json {
-                        serde_json::to_string_pretty(&tracks).map_err(|e| e.to_string())
-                    } else {
-                        Ok(tracks
-                            .iter()
-                            .map(format_provider_track)
-                            .collect::<Vec<_>>()
-                            .join("\n"))
-                    }
-                }
-                ProviderAction::Playlists { provider } => {
-                    let playlists = client
-                        .providers()
-                        .playlists(provider)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    if json {
-                        serde_json::to_string_pretty(&playlists).map_err(|e| e.to_string())
-                    } else {
-                        Ok(playlists
-                            .iter()
-                            .map(format_provider_playlist)
-                            .collect::<Vec<_>>()
-                            .join("\n"))
-                    }
-                }
-                ProviderAction::Tracks { provider, id } => {
-                    let tracks = client
-                        .providers()
-                        .playlist_tracks(provider, id)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    if json {
-                        serde_json::to_string_pretty(&tracks).map_err(|e| e.to_string())
-                    } else {
-                        Ok(tracks
-                            .iter()
-                            .map(format_provider_track)
-                            .collect::<Vec<_>>()
-                            .join("\n"))
-                    }
-                }
-                ProviderAction::Play {
-                    provider,
-                    id,
-                    title,
-                    artist,
-                    album,
-                    duration,
-                } => {
-                    let track = ProviderTrack {
-                        provider: provider.clone(),
-                        id: id.clone(),
-                        title: title.clone().unwrap_or_default(),
-                        artist: artist.clone(),
-                        album: album.clone(),
-                        duration_secs: *duration,
-                        ..Default::default()
-                    };
-                    client
-                        .providers()
-                        .play(&track)
-                        .await
-                        .map(|()| "ok".to_string())
-                        .map_err(|e| e.to_string())
-                }
-                ProviderAction::Like {
-                    provider,
-                    id,
-                    title,
-                } => {
-                    let track = ProviderTrack {
-                        provider: provider.clone(),
-                        id: id.clone(),
-                        title: title.clone(),
-                        ..Default::default()
-                    };
-                    client
-                        .providers()
-                        .like(&track)
-                        .await
-                        .map(|()| "ok".to_string())
-                        .map_err(|e| e.to_string())
-                }
-            },
-            CliCommand::Podcast(action) => match action {
-                PodcastAction::Add { url } => {
-                    let feeds = client
-                        .podcast()
-                        .add_feed(url)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    match feeds.first() {
-                        Some(f) => Ok(format!("subscribed to {} ({})", f.title, f.episodes)),
-                        None => Err("feed returned no episodes".to_string()),
-                    }
-                }
-                PodcastAction::Remove { feed_id } => client
-                    .podcast()
-                    .remove_feed(feed_id)
-                    .await
-                    .map(|()| format!("removed feed {feed_id}"))
-                    .map_err(|e| e.to_string()),
-                PodcastAction::List => {
-                    let feeds = client.podcast().feeds().await.map_err(|e| e.to_string())?;
-                    for f in &feeds {
-                        println!("{}\t{}\t{} episodes", f.id, f.title, f.episodes);
-                    }
-                    Ok(format!("{} feeds", feeds.len()))
-                }
-                PodcastAction::Episodes { feed_id } => {
-                    let (title, eps) = client
-                        .podcast()
-                        .episodes(feed_id)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    for (i, e) in eps.iter().enumerate() {
-                        let dur = e
-                            .duration_secs
-                            .map(format_duration)
-                            .unwrap_or_else(|| "-".into());
-                        println!("{i}\t{dur}\t{}", e.title);
-                    }
-                    Ok(format!("{title}: {} episodes", eps.len()))
-                }
-                PodcastAction::Refresh { feed_id } => {
-                    let n = client
-                        .podcast()
-                        .refresh(feed_id.as_deref())
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    Ok(format!("refreshed {n} feeds"))
-                }
-                PodcastAction::Play {
-                    feed_id,
-                    episode_index,
-                } => client
-                    .podcast()
-                    .play(feed_id, *episode_index)
-                    .await
-                    .map(|()| format!("playing {feed_id}[/{episode_index}]"))
-                    .map_err(|e| e.to_string()),
-                PodcastAction::Status => {
-                    let st = client.podcast().status().await.map_err(|e| e.to_string())?;
-                    let err = st.error.as_deref().unwrap_or("none");
-                    Ok(format!(
-                        "podcast: {} feeds, {} episodes (last error: {err})",
-                        st.feeds, st.episodes
-                    ))
-                }
-            },
-            CliCommand::Radio(action) => match action {
-                RadioAction::Search { query, limit } => {
-                    let stations = client
-                        .radio()
-                        .search(query, *limit)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    for s in &stations {
-                        println!(
-                            "{}\t{}\t{}\t{:.1} votes",
-                            s.id, s.name, s.url_resolved, s.votes
-                        );
-                    }
-                    Ok(format!("{} stations", stations.len()))
-                }
-                RadioAction::Top { limit } => {
-                    let stations = client
-                        .radio()
-                        .top(*limit)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    for s in &stations {
-                        println!(
-                            "{}\t{}\t{}\t{:.1} votes",
-                            s.id, s.name, s.url_resolved, s.votes
-                        );
-                    }
-                    Ok(format!("{} stations", stations.len()))
-                }
-                RadioAction::Cliamp { refresh } => {
-                    let stations = client
-                        .radio()
-                        .cliamp(*refresh)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    for s in &stations {
-                        println!("{}\t{}\t{}\t{}", s.id, s.name, s.url_resolved, s.tags);
-                    }
-                    Ok(format!("{} cliamp channels", stations.len()))
-                }
-                RadioAction::Play {
-                    station_id,
-                    station_name,
-                } => {
-                    let name = station_name.clone().unwrap_or_else(|| "Radio".to_string());
-                    client
-                        .radio()
-                        .play(station_id, &name)
-                        .await
-                        .map(|()| format!("playing {name}"))
-                        .map_err(|e| e.to_string())
-                }
-                RadioAction::Tags { limit } => {
-                    let tags = client
-                        .radio()
-                        .tags(*limit)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    for t in &tags {
-                        println!("{}\t{} stations", t.name, t.station_count);
-                    }
-                    Ok(format!("{} tags", tags.len()))
-                }
-                RadioAction::Countries { limit } => {
-                    let countries = client
-                        .radio()
-                        .countries(*limit)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    for c in &countries {
-                        println!("{}\t{} stations", c.name, c.station_count);
-                    }
-                    Ok(format!("{} countries", countries.len()))
-                }
-                RadioAction::Tag { tag, limit } => {
-                    let stations = client
-                        .radio()
-                        .stations_by_tag(tag, *limit)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    for s in &stations {
-                        println!(
-                            "{}\t{}\t{}\t{:.1} votes",
-                            s.id, s.name, s.url_resolved, s.votes
-                        );
-                    }
-                    Ok(format!("{} stations", stations.len()))
-                }
-                RadioAction::Country { country, limit } => {
-                    let stations = client
-                        .radio()
-                        .stations_by_country(country, *limit)
-                        .await
-                        .map_err(|e| e.to_string())?;
-                    for s in &stations {
-                        println!(
-                            "{}\t{}\t{}\t{:.1} votes",
-                            s.id, s.name, s.url_resolved, s.votes
-                        );
-                    }
-                    Ok(format!("{} stations", stations.len()))
-                }
-                RadioAction::List => {
-                    let stations = crate::shared::custom::list_custom_stations()?;
-                    for (i, s) in stations.iter().enumerate() {
-                        println!("custom:{}\t{}\t{}", i + 1, s.name, s.url);
-                    }
-                    Ok(format!("{} custom stations", stations.len()))
-                }
-                RadioAction::Add { name, url } => {
-                    let index = crate::shared::custom::add_custom_station(name, url, None)?;
-                    Ok(format!("added custom:{index} {name}"))
-                }
-                RadioAction::Rm { selector } => {
-                    let removed = crate::shared::custom::remove_custom_station(selector)?;
-                    Ok(format!("removed custom:{}", removed.name))
-                }
-            },
-            CliCommand::Setup {
-                service,
-                api,
-                cli: true,
-            } => {
-                let service = service.clone().or_else(|| api.clone());
-                setup_wizard(&client, service.as_deref()).await
-            }
-            CliCommand::Setup { cli: false, .. } => Ok("setup finished".to_string()),
         }
     });
 
@@ -1915,23 +293,52 @@ pub fn run(socket: Option<String>, json: bool, verbose: bool, cmd: &CliCommand) 
     }
 }
 
+fn format_now_playing(state: &crate::shared::global::DaemonState) -> String {
+    if let Some(ref t) = state.current_track {
+        format!("Now Playing: {}\n{} - {}", t.title, t.artist, t.album)
+    } else {
+        "Stopped".into()
+    }
+}
+
+fn format_status(state: &crate::shared::global::DaemonState) -> String {
+    let status_str = match state.status {
+        PlaybackStatus::Playing => "\x1b[32m▶ Playing\x1b[0m",
+        PlaybackStatus::Paused => "\x1b[33m⏸ Paused\x1b[0m",
+        PlaybackStatus::Stopped => "\x1b[31m⏹ Stopped\x1b[0m",
+    };
+    let track_str = state.current_track.as_ref().map(|t| {
+        let title = match t.display_title() { s if s.is_empty() => "Unknown".to_string(), s => s };
+        if t.artist.is_empty() { title } else { format!("{}: {}", t.artist, title) }
+    }).unwrap_or_else(|| "No track".into());
+    format!(
+        "\x1b[1mPlayback:\x1b[0m  {status_str}\n\
+         \x1b[1mTrack:\x1b[0m    {track_str}\n\
+         \x1b[1mVolume:\x1b[0m   \x1b[36m{}%\x1b[0m ({})\n\
+         \x1b[1mRepeat:\x1b[0m   {:?}\n\
+         \x1b[1mShuffle:\x1b[0m  {}\n\
+         \x1b[1mQueue:\x1b[0m    {} tracks, cursor {}/{}",
+        state.volume,
+        if state.mute { "\x1b[33mMuted\x1b[0m" } else { "Unmuted" },
+        state.repeat,
+        if state.shuffle { "\x1b[32mOn\x1b[0m" } else { "Off" },
+        state.queue.len(),
+        state.queue_cursor + 1,
+        state.queue.len().max(1),
+    )
+}
+
 fn open_config() -> Result<(), String> {
     let path = ensure_prefs_file();
     let editor = pick_editor().ok_or_else(|| {
-        format!(
-            "no editor found: set $VISUAL or $EDITOR to open {}",
-            path.display()
-        )
+        format!("no editor found: set $VISUAL or $EDITOR to open {}", path.display())
     })?;
-
     let program = editor[0].clone();
-    let args = &editor[1..];
     let status = std::process::Command::new(&program)
-        .args(args)
+        .args(&editor[1..])
         .arg(&path)
         .status()
         .map_err(|e| format!("failed to launch editor `{program}`: {e}"))?;
-
     if status.success() {
         println!("Opened config at {}", path.display());
         Ok(())
@@ -1944,17 +351,13 @@ fn pick_editor() -> Option<Vec<String>> {
     for var in ["VISUAL", "EDITOR"] {
         if let Ok(val) = std::env::var(var) {
             let parts: Vec<String> = val.split_whitespace().map(String::from).collect();
-            if let Some(program) = parts.first()
-                && command_exists(program)
-            {
-                return Some(parts);
+            if let Some(program) = parts.first() {
+                if command_exists(program) { return Some(parts); }
             }
         }
     }
     for name in ["vim", "nvim", "vi", "nano", "micro", "emacs", "ed"] {
-        if command_exists(name) {
-            return Some(vec![name.to_string()]);
-        }
+        if command_exists(name) { return Some(vec![name.to_string()]); }
     }
     None
 }
@@ -1963,337 +366,4 @@ fn command_exists(name: &str) -> bool {
     std::env::var_os("PATH")
         .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(name).is_file()))
         .unwrap_or(false)
-}
-
-fn format_spotify_status(st: &SpotifyStatus) -> String {
-    let mut out = if st.linked {
-        format!("Linked as {}", st.user.as_deref().unwrap_or("(unknown)"))
-    } else {
-        "Disconnected".to_string()
-    };
-    if let Some(dev) = st.device.as_deref().filter(|d| !d.is_empty()) {
-        out += &format!(" | device: {dev}");
-    }
-    if st.linked {
-        if st.premium {
-            out += if st.playing {
-                " | playing ▶"
-            } else {
-                " | paused ❚❚"
-            };
-        } else {
-            out += " | playback control needs Premium";
-        }
-        out += &format!(" | {} playlists, {} tracks", st.playlists, st.tracks);
-    }
-    if let Some(e) = st.error.as_deref() {
-        out += &format!(" | error: {e}");
-    }
-    out
-}
-
-/// One catalogue provider, whether it can answer, and what it supports.
-fn format_provider_source(s: &ProviderSource) -> String {
-    let state = if s.available {
-        s.detail.as_deref().unwrap_or("ready").to_string()
-    } else {
-        format!(
-            "unavailable: {}",
-            s.detail.as_deref().unwrap_or("not configured")
-        )
-    };
-    let caps = [
-        ("search", s.caps.search),
-        ("browse", s.caps.browse),
-        ("playlists", s.caps.playlists),
-        ("write", s.caps.playlist_write),
-        ("like", s.caps.like),
-        ("stream", s.caps.stream),
-    ]
-    .iter()
-    .filter(|(_, on)| *on)
-    .map(|(name, _)| *name)
-    .collect::<Vec<_>>()
-    .join(",");
-    format!("{}\t{}\t{}\t{state}\t{caps}", s.id, s.name, s.kind.label())
-}
-
-fn format_provider_playlist(p: &ExternalPlaylist) -> String {
-    let owner = if p.owner.is_empty() {
-        String::new()
-    } else {
-        format!("\tby {}", p.owner)
-    };
-    let edit = if p.editable { "\teditable" } else { "" };
-    format!(
-        "{}\t{}\t{} tracks{owner}{edit}",
-        p.id, p.name, p.track_count
-    )
-}
-
-fn format_provider_track(t: &ProviderTrack) -> String {
-    let artist = if t.artist.is_empty() {
-        String::new()
-    } else {
-        format!(" \u{2014} {}", t.artist)
-    };
-    let duration = if t.duration_secs > 0.0 {
-        format!(" ({})", format_duration(t.duration_secs.round() as u64))
-    } else {
-        String::new()
-    };
-    format!("{}\t{}{artist}{duration}", t.id, t.title)
-}
-
-/// One registered provider, with the verbs it actually offers.
-fn format_playlist_source(s: &PlaylistSource) -> String {
-    let mut out = format!("{}\t{}", s.source_id, s.display_name);
-    match &s.unavailable {
-        Some(why) => out += &format!("\tunavailable: {why}"),
-        None => {
-            let verbs = [
-                ("create", s.caps.create),
-                ("rename", s.caps.rename),
-                ("add", s.caps.add),
-                ("remove", s.caps.remove),
-                ("delete", s.caps.delete),
-                ("subscribe", s.caps.subscribe),
-                ("copy", s.caps.copy),
-            ]
-            .iter()
-            .filter(|(_, on)| *on)
-            .map(|(name, _)| *name)
-            .collect::<Vec<_>>()
-            .join(",");
-            out += &format!("\t{verbs}");
-        }
-    }
-    out
-}
-
-fn format_duration(secs: u64) -> String {
-    let h = secs / 3600;
-    let m = (secs % 3600) / 60;
-    let s = secs % 60;
-    if h > 0 {
-        format!("{h}:{m:02}:{s:02}")
-    } else {
-        format!("{m}:{s:02}")
-    }
-}
-
-fn prompt(msg: &str) -> Result<String, String> {
-    let mut out = String::new();
-    print!("{msg}");
-    std::io::stdout().flush().map_err(|e| e.to_string())?;
-    std::io::stdin()
-        .read_line(&mut out)
-        .map_err(|e| e.to_string())?;
-    Ok(out.trim().to_string())
-}
-
-// ─── Source setup wizard (gtm setup --cli) ───
-
-/// Walk through every (or one) source that needs credentials, running OAuth
-/// browser steps where applicable. Returns a human-readable summary.
-async fn setup_wizard(client: &DaemonClient, service: Option<&str>) -> Result<String, String> {
-    let single = service.map(|s| s.trim().to_ascii_lowercase());
-    match single.as_deref() {
-        Some("spotify") => setup_spotify(client).await,
-        Some("lastfm" | "last.fm") => setup_lastfm(client).await,
-        Some(other) => Err(format!(
-            "unknown service '{other}' (expected spotify or lastfm)"
-        )),
-        None => {
-            let steps = [
-                ("Spotify", setup_spotify(client).await),
-                ("Last.fm", setup_lastfm(client).await),
-            ];
-            let mut lines = Vec::new();
-            for (name, result) in steps {
-                match result {
-                    Ok(msg) => lines.push(format!("{name}: {msg}")),
-                    Err(e) => lines.push(format!("{name}: error: {e}")),
-                }
-            }
-            Ok(lines.join("\n"))
-        }
-    }
-}
-
-/// Weekly prompt → `true` for a yes-like answer.
-fn confirm(msg: &str) -> Result<bool, String> {
-    let ans = prompt(msg)?;
-    Ok(matches!(
-        ans.as_str(),
-        "y" | "Y" | "yes" | "Yes" | "YES" | "true" | "1"
-    ))
-}
-
-/// Masked input (falls back to a plain read when no tty is available).
-fn masked_prompt(msg: &str) -> Result<String, String> {
-    match rpassword::prompt_password(msg) {
-        Ok(s) => Ok(s.trim().to_string()),
-        Err(_) => prompt(msg),
-    }
-}
-
-/// Collect a value, prefilled with the stored one; empty input keeps it.
-fn value_or_default(label: &str, stored: Option<String>) -> Result<String, String> {
-    match stored {
-        Some(cur) => {
-            println!("{label}: {cur} (stored; leave blank to keep)");
-            let v = prompt("> ")?;
-            Ok(if v.is_empty() { cur } else { v })
-        }
-        None => prompt(&format!("{label}: ")),
-    }
-}
-
-/// Like [`value_or_default`] but the stored value is never echoed.
-fn masked_or_default(label: &str, stored: Option<String>) -> Result<String, String> {
-    match stored {
-        Some(_) => {
-            println!("{label}: (stored; leave blank to keep)");
-            let v = masked_prompt("> ")?;
-            Ok(if v.is_empty() { stored.unwrap() } else { v })
-        }
-        None => masked_prompt(&format!("{label}: ")),
-    }
-}
-
-/// Spot integration: skipped when a Spotify account is already linked.
-async fn setup_spotify(client: &DaemonClient) -> Result<String, String> {
-    let st = client.spotify().status().await.map_err(|e| e.to_string())?;
-    if st.linked {
-        return Ok(format_spotify_status(&st));
-    }
-    if !confirm("Spotify is not linked. Link it now? [y/N] ")? {
-        return Ok("not configured".to_string());
-    }
-    spotify_login(client, None, None).await
-}
-
-/// Run the Spotify OAuth PKCE link flow: resolve the client id (explicit arg >
-/// keychain > masked prompt), open the authorize URL in the browser, and poll
-/// the daemon until its loopback callback has captured the token.
-async fn spotify_login(
-    client: &DaemonClient,
-    client_id: Option<String>,
-    port: Option<u16>,
-) -> Result<String, String> {
-    let port = port
-        .or_else(|| {
-            std::env::var("GTM_SPOTIFY_PORT")
-                .ok()
-                .and_then(|v| v.parse().ok())
-        })
-        .unwrap_or(8990);
-    // `--client-id` sets the *Web API* app: the one that mints the token used
-    // for search, artwork and playlist sync. Playback is unaffected and keeps
-    // using librespot's id, because Spotify Connect only accepts a token issued
-    // by the same client id it registers as, and a self-registered app is not a
-    // recognised playback app — a link made with one can browse the whole
-    // library and still play nothing.
-    //
-    // Supplying an id is what gets those calls out of librespot's shared quota,
-    // which every other librespot install competes for and which answers `429`
-    // under any real usage. Omitting it keeps the previous behaviour exactly.
-    let client_id = client_id
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-
-    // An id from an older install is inert now, but drop it so the keychain
-    // stops holding an app that can no longer be used for anything.
-    delete_secret(SPOTIFY_CLIENT_ID);
-
-    let url = client
-        .spotify()
-        .oauth_start_with(port, client_id)
-        .await
-        .map_err(|e| e.to_string())?;
-    println!("Open this URL in your browser to authorize gtm:\n{url}\n");
-    let _ = webbrowser::open(&url);
-    println!("Waiting for you to finish login in your browser…");
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
-    loop {
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        match client.spotify().status().await {
-            Ok(st) if st.linked => return Ok(format_spotify_status(&st)),
-            Ok(_) if std::time::Instant::now() < deadline => continue,
-            Ok(_) => return Err("timed out waiting for Spotify login".to_string()),
-            Err(e) => return Err(e.to_string()),
-        }
-    }
-}
-
-/// Last.fm integration: collect API credentials, open the web-auth URL, and
-/// capture the token via a loopback callback (or a manual paste).
-async fn setup_lastfm(client: &DaemonClient) -> Result<String, String> {
-    let st = client.lastfm().status().await.map_err(|e| e.to_string())?;
-    if st.ready {
-        return Ok(format_lastfm_status(&st));
-    }
-    if !confirm("Last.fm is not linked. Set it up now? [y/N] ")? {
-        return Ok("not configured".to_string());
-    }
-
-    println!("Create an API application (API key, secret, and callback URL) at:");
-    println!("  https://www.last.fm/api/account/create");
-    let api_key = value_or_default("Last.fm API key", get_secret(LASTFM_API_KEY))?;
-    let api_secret = masked_or_default("Last.fm API secret", get_secret(LASTFM_API_SECRET))?;
-    if api_key.trim().is_empty() || api_secret.trim().is_empty() {
-        return Err("Last.fm API key and secret are required".into());
-    }
-
-    client
-        .lastfm()
-        .set_config(true, Some(api_key), Some(api_secret), None, None, None)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let url = client
-        .lastfm()
-        .oauth_start()
-        .await
-        .map_err(|e| e.to_string())?;
-    println!("Open this URL in your browser and click Allow:\n{url}\n");
-    let _ = webbrowser::open(&url);
-
-    // Last.fm's desktop flow ends when permission is granted — nothing is sent
-    // back — so there is nothing to wait for here. The daemon retries the
-    // exchange in the background and this polls its status until it resolves,
-    // which is what makes this command safe to script.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
-    loop {
-        let st = client.lastfm().status().await.map_err(|e| e.to_string())?;
-        if st.ready {
-            break Ok(format_lastfm_status(&st));
-        }
-        if let Some(e) = st.error.as_deref().filter(|e| !e.is_empty()) {
-            break Err(e.to_string());
-        }
-        if std::time::Instant::now() >= deadline {
-            break Err("timed out waiting for the Last.fm authorization".into());
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-    }
-}
-
-fn format_lastfm_status(st: &LastfmStatus) -> String {
-    let mut out = if st.ready {
-        if st.enabled {
-            "Ready (scrobbling enabled)".to_string()
-        } else {
-            "Ready (scrobbling disabled)".to_string()
-        }
-    } else if st.api_key.is_some() {
-        "API key set, not yet authorized".to_string()
-    } else {
-        "Not configured".to_string()
-    };
-    if let Some(sk) = st.session_token.as_deref().filter(|s| !s.is_empty()) {
-        out += &format!(" | session {}", mask_credential(sk));
-    }
-    out
 }

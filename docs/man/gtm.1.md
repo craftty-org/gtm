@@ -81,15 +81,11 @@ local IPC socket.
 
 1. Create an application at <https://discord.com/developers/applications> and
    copy its numeric **Application ID**.
-2. Paste it into **Alt+X** → Discord, or set `discord_app_id` in the
-   **daemon's** `config.toml` (`$XDG_CONFIG_HOME/gtm/config.toml`).
+2. Paste it into **Alt+X** → Discord, or set `discord_app_id` in
+   `$XDG_CONFIG_HOME/gtm/config.toml` (the TUI also writes this key).
 
 The daemon re-reads that file every two seconds, so no restart is needed.
-While a track is playing, Discord shows its title as the activity detail and
-`artist · album` as the state, with the elapsed time as a progress bar.
-
-To turn it off, empty the `Alt+X` field and press Enter, or remove
-`discord_app_id` from the daemon's config.
+To turn it off, clear the field in the TUI or remove `discord_app_id` from config.
 
 ## Global Keys
 
@@ -132,377 +128,59 @@ To turn it off, empty the `Alt+X` field and press Enter, or remove
 
 # CLI MODE
 
-With the **\--cli** (or **-c**) flag, **gtm** sends a single command to the
-daemon and prints the result. Use **\--json** for machine-readable output.
+With **\--cli** (or **-c**), **gtm** sends a single command to **gtmd**(1) and prints the result. Use **\--json** for machine-readable output where supported. Browsing, library management, integrations, and advanced setup are intentionally left to the TUI or IPC clients (see **gtmd-ipc**(1)).
 
-## Playback
+## Response/output convention
+
+- Success commands print `ok` (or a short confirmation) unless noted.
+- Read commands print human-readable text by default; with **\--json** they emit the daemon response/state object for that command.
+- `status --stream` continuously redraws a compact status line until interrupted.
+- Errors are printed to stderr and exit non-zero.
+
+## Essential commands
 
 **play** *path* [*start_pos*]
-:   Play a track by filesystem path or URL. Optionally start at a given
-    position in seconds. An `http://` or `https://` URL is treated as an
-    internet stream.
+:   Play a local file path (resolved relative to the client cwd) or resume from *start_pos* seconds.
 
 **stream** *url*
-:   Play an HTTP(S) stream. The URL may also point to an M3U/PLS playlist,
-    which is fetched and resolved server-side; remaining playlist entries are
-    queued behind the first so **next** rotates through them. Live stream
-    titles (ICMP/Shoutcast `StreamTitle`) appear in the playing view.
+:   Play an HTTP(S) stream URL.
 
-**play-pause**
-:   Toggle between play and pause (smart: stopped → play, playing → pause,
-    paused → resume).
-
-**pause**
-:   Pause playback.
-
-**stop**
-:   Stop playback entirely.
-
-**next**
-:   Skip to the next track in the queue.
-
-**prev**
-:   Return to the previous track.
+**play-pause** | **pause** | **stop** | **next** | **prev**
+:   Transport controls.
 
 **seek** *position_secs*
-:   Seek to a specific position in the current track (in seconds).
+:   Seek within the current track.
 
 **volume** [*volume*]
-:   Set the playback volume (0-100). Omit the argument to print the current
-    volume as a bare number, which is what a script polling it wants.
+:   Get current volume, or set 0-100.
 
-**eq-presets**
-:   List the equalizer presets by name, in the order the picker steps through
-    them. They are compiled in rather than read from config, so the list is the
-    same on every install.
-
-**mute**
-:   Toggle mute.
-
-**mono**
-:   Toggle mono downmix.
-
-**love**
-:   Love the current track on Last.fm. Also immediate-scrobbles the play
-    session.
-
-**unlove**
-:   Remove the Last.fm love flag from the current track.
-
-**scrobble**
-:   Toggle Last.fm scrobbling for this session and report the new state.
-
-**shuffle**
-:   Toggle shuffle mode for the queue.
+**shuffle** | **mute**
+:   Toggle shuffle or mute.
 
 **repeat** {off|one|all}
 :   Set repeat mode.
 
-**crossfade** *enabled* [*duration_secs*]
-:   Enable or disable crossfade between tracks. Optional duration in seconds
-    (default: 7, clamped to 1–30). Crossfade is skipped for Spotify tracks
-    (`spotify:` URIs), which librespot cannot pre-decode.
-
-**pre-gain** *db*
-:   Set the gain applied to every sample before the EQ and reverb, in decibels
-    (range −24…+24). Positive values make it louder. The value is persisted and
-    replayed into the mixer at startup, and takes effect on the track already
-    playing. Also in Settings → Playback, where it steps by 1 dB.
-
-## Queue
+**status** [**--stream**]
+:   Show playback state. `--stream` redraws continuously; `--json` returns daemon status state.
 
 **queue**
-:   Display the current playback queue.
+:   Show queue. `--json` returns queue state.
 
-**queue-add** *path*... [`--position` *index*]
-:   Add tracks to the queue. Directories are scanned recursively for audio
-    files. Without `--position` the tracks are inserted play-next, right
-    after the current entry. Indices are positions in the merged view (the
-    user queue first, then the default library list).
+**queue-add** *path*... [**--position** *index*]
+:   Add files/directories to the queue (optionally at *index*).
 
 **queue-remove** *index*
-:   Remove a track by index. Out-of-range indices are silently ignored.
-
-**queue-move** *from* *to*
-:   Move a track between positions in the merged view.
+:   Remove a queue entry by index.
 
 **queue-clear**
-:   Clear the entire queue.
+:   Clear the queue.
 
-**queue-set** *paths*...
-:   Replace the entire queue with the given paths. Playback does not start; use
-    **play** for that.
+**ping** | **check-health** | **quit**
+:   Daemon liveness/health and shutdown. `check-health --json` returns the health report.
 
-## Library
+**config** [**--validate**] [**--reset**]
+:   Open the client config in `$VISUAL`/`$EDITOR`, validate it, or reset to defaults.
 
-**scan** *path*
-:   Scan a directory for music files. There is no file watcher: the daemon
-    scans its library paths once at startup, and after that you must run
-    **scan** or restart the daemon. Startup also appends newly found tracks
-    to the playback queue.
-
-**tracks** [*filter*] [*sort*]
-:   List tracks in the library.
-
-**playlists**
-:   List saved playlists.
-
-**create-playlist** *name*
-:   Create a new playlist.
-
-**delete-playlist** *id*
-:   Delete a playlist by ID.
-
-**add-to-playlist** *playlist_id* *track_ids*...
-:   Add tracks to a playlist.
-
-**playlist-dedup** *playlist_id*
-:   Remove duplicate track entries from a playlist.
-
-**playlist-doctor** *playlist_id*
-:   Remove playlist entries whose audio file is missing on disk.
-
-**playlist-sort** *playlist_id* [`--field` *title|artist|album|date*]
-:   Reorder a playlist's tracks in place. Defaults to `title`.
-
-**import-playlist** *path* `--format` *m3u8|pls*
-:   Import a playlist file (M3U8 or PLS) into the library. Defaults to M3U8.
-
-**export-playlist** *playlist_id* *path* `--format` *m3u8|pls*
-:   Export a playlist to an M3U8 or PLS file. Defaults to M3U8.
-
-**recent** *count*
-:   Show recently played tracks.
-
-**metadata-sync** [*path*]
-:   Probe tags for a single file, or for every library track. Scanning itself
-    never contacts a provider. The gate is per-track: once a track qualifies
-    and Deezer answers, title, artist, album, genre, year, track number and
-    `album_id` are written wholesale to both the file tags and the database.
-
-**search** *query*
-:   Search the library.
-
-**lyrics** *query*
-:   Fetch lyrics for an "Artist - Title" query via LRCLIB.
-
-**check-health**
-:   Check daemon connectivity and return version info.
-
-## Playlists
-
-Provider-owned playlists, as opposed to the library playlists above. These go
-through the daemon's provider registry, so `--source` picks the provider and a
-verb that provider refuses is reported rather than attempted.
-**playlist sources** is the read that says which providers are registered,
-what each calls itself, and which verbs it offers.
-
-**playlist sources**
-:   List the registered providers with their `source_id`, display name and
-    supported verbs. A provider that is registered but unusable carries the
-    reason.
-
-**playlist create** `--source` *source* `--name` *name* [`--description` *text*] [`--public`]
-:   Create a playlist and print its id.
-
-**playlist rename** `--source` *source* `--id` *id* [`--name` *name*] [`--description` *text*] [`--public`|`--private`]
-:   Change a playlist's details. Anything omitted is left alone, including
-    privacy: with neither `--public` nor `--private` the playlist keeps the
-    visibility it had.
-
-**playlist add** `--source` *source* `--id` *id* `--track` *ref*... [`--at` *position*]
-:   Add tracks by provider-native reference (`spotify:track:...`). Appends
-    unless `--at` gives an insertion position.
-
-**playlist remove** `--source` *source* `--id` *id* `--track` *ref*... [`--position` *index*...]
-:   Remove tracks. Positions matter because the same track can appear in a
-    playlist more than once; repeat `--position` to remove several occurrences.
-
-**playlist delete** `--source` *source* `--id` *id*
-:   Delete a playlist the account owns.
-
-**playlist subscribe** `--source` *source* `--id` *id* [`--off`]
-:   Follow a playlist, or unfollow it with `--off`.
-
-**playlist copy** `--source` *source* `--id` *id* [`--name` *name*]
-:   Copy a readable playlist into one the account owns.
-
-## Favourites
-
-**favourites**
-:   List favourite tracks.
-
-**favourite-add** *track_id*
-:   Add a track to favourites.
-
-**favourite-remove** *track_id*
-:   Remove a track from favourites.
-
-## YouTube
-
-**yt-search** *query*
-:   Search YouTube. A query starting with `http://` / `https://` is resolved
-    as a direct URL instead. Provider prefixes select another source:
-    `scsearch:` (SoundCloud), `bilisearch:` (Bilibili), `mcsearch:` (Mixcloud).
-    Any other query is sent as `<query> official audio` so the top hits are
-    single tracks. Additional providers can be registered with
-    `GTM_YT_HOSTS`.
-
-## Spotify
-
-**spotify** *connect* *token*
-:   Link the account with an access token (metadata/playlist APIs).
-
-**spotify** *login* [*client_id*] [*port*]
-:   Run the OAuth PKCE browser flow to link the account. The callback is served
-    on a loopback port (default 8990, `$GTM_SPOTIFY_PORT`).
-
-    *client_id* is accepted and ignored. The Spotify app is fixed, because
-    Connect only plays audio for a token issued by the client id the session
-    registers as, and a self-registered app is not one it recognises — a link
-    made with one browses the whole library and plays nothing.
-
-**spotify** *disconnect*
-:   Unlink the account and delete the stored token.
-
-**spotify** *status*
-:   Show the current link/playback status.
-
-**spotify** *sync*
-:   Re-sync all playlists from the Web API.
-
-## Podcast
-
-**podcast** *add* *url*
-:   Subscribe to a podcast feed (RSS/Atom URL).
-
-**podcast** *remove* *feed_id*
-:   Unsubscribe from a feed.
-
-**podcast** *list*
-:   List subscribed feeds.
-
-**podcast** *episodes* *feed_id*
-:   List episodes of a feed.
-
-**podcast** *refresh* [*feed_id*]
-:   Refresh all feeds (or a single one) from the network.
-
-**podcast** *play* *feed_id* *episode_index*
-:   Play an episode by its zero-based index in the feed.
-
-**podcast** *status*
-:   Show podcast state.
-
-## Radio
-
-**radio** *search* *query* *limit*
-:   Search radio-browser.info for stations by name or tag.
-
-**radio** *top* *limit*
-:   List the top-rated stations.
-
-**radio** *cliamp* [*--refresh*]
-:   List the curated cliamp radio channels. Pass *--refresh* to bypass the
-    daemon's session cache.
-
-**radio** *tags* *limit*
-:   List the most-used station tags on radio-browser.info.
-
-**radio** *tag* *tag* *limit*
-:   List stations carrying a tag.
-
-**radio** *countries* *limit*
-:   List the available station countries.
-
-**radio** *country* *country* *limit*
-:   List stations from a country.
-
-**radio** *play* *station_id* [*station_name*]
-:   Play a station by its radio-browser id or cliamp id
-    (`cliamp:<channel>`, for example `cliamp:lofi`), optionally with a display
-    name.
-
-**radio** *list*
-:   List locally stored custom stations (see *add* below). Each is referenced
-    by a `custom:N` id where *N* is its 1-based index.
-
-**radio** *add* *name* *url*
-:   Store a custom station URL so **radio play** `custom:N` and the TUI can
-    open it from any machine. Stations live in `$XDG_CONFIG_HOME/gtm/radios.toml`.
-
-**radio** *rm* *selector*
-:   Remove a custom station by `custom:N` index or by exact name.
-
-## Setup
-
-**setup** [*service*] [**\--cli**]
-:   Interactive source setup. Without a *service* argument (`spotify` or
-    `lastfm`), a picker opens and every unconfigured source is
-    walked through in turn. OAuth steps open your browser: Spotify captures
-    the loopback callback automatically, and Last.fm just waits for you to
-    click *Allow* (its desktop flow sends nothing back). With **\--cli**, run the
-    plain terminal wizard instead of the TUI. The daemon is started
-    automatically if it is not already running.
-
-## Daemon
-
-**status** [**\--stream**] [**\--lyrics**]
-:   Show daemon status. With **\--stream**, stream elapsed time continuously.
-    **\--lyrics** prints the time-synced lyric line for the current position;
-    it works with and without **\--stream**, and with **\--stream** it is
-    fetched once per track rather than once per tick. The current track's
-    cover path is always listed under **Cover:**.
-
-**ping**
-:   Ping the daemon.
-
-**quit**
-:   Shut down the daemon.
-
-## Configuration
-
-**config** [`--reset`] [`--validate`]
-:   Open the config file in the default editor, creating it on first run.
-    `--reset` restores defaults, `--validate` reports parse errors.
-
-    Enum values are case-sensitive and several have no serde rename:
-    `track_sort` takes `Recents` / `RecentlyAdded` / `Alphabetical` / `Artist` /
-    `Album`. An invalid value does not fail just that key — the entire file is
-    discarded and defaults are used, silently. Validate before relying on a
-    hand-edited file.
-
-    Keys this build no longer has are ignored rather than rejected. Values it
-    dropped are not: `visualizer_preset` takes all twelve presets — `braille`,
-    `blocks`, `mirror`, `gradient`, `spectrum`, `barsdot`, `classicpeak`,
-    `columns`, `wave`, `stereo`, `retro` and `flame` — and a value that is none
-    of them discards the file like any other invalid value.
-
-**sleep-timer** *minutes*
-:   Set the sleep timer (minutes until playback fades out and stops).
-
-**cancel-sleep-timer**
-:   Cancel a running sleep timer.
-
-**low-power** [`--set` *on|off*]
-:   Toggle low-power mode (pauses playback and eases up on background work).
-    Use `--set on|off` to force a state instead of toggling. With no flag,
-    prints the current state.
-
-**audio-devices**
-:   List available audio output devices.
-
-**set-audio-device** *name*
-:   Switch the audio output device (use `default` for the system default).
-    Switching restarts the output and stops playback.
-
-**update-metadata** *track_id* *field* *value*
-:   Edit metadata in the **library database**; the audio file is not
-    rewritten. Fields: title, artist, album, genre, year, track-number. An
-    empty value clears the four text fields, but `year` and `track-number`
-    must parse as an integer and cannot be cleared. No range validation is
-    applied here; the 1000–9999 / >0 checks apply only during metadata-sync
-    write-back to file tags.
 
 # OPTIONS
 
@@ -569,8 +247,7 @@ $HOME/.gtm/gtm/gtmd.sock
 :   Final fallback.
 
 $XDG_CONFIG_HOME/gtm/radios.toml
-:   Custom radio stations added with **radio add** (defaults to
-    `~/.config/gtm/radios.toml`).
+:   Custom radio stations used by radio features (managed via TUI/IPC or by editing the file directly). Default: `~/.config/gtm/radios.toml`.
 
 $XDG_CONFIG_HOME/gtm/footer.toml
 :   Optional user footer presets. Built-in presets are **Default**, **Minimal**
@@ -600,7 +277,7 @@ prjctimg <prjctimg@outlook.com>
 
 # BUGS
 
-Report bugs to <https://github.com/prjctimg/gtm/issues> or by email to
+Report bugs to <https://github.com/craftty-org/gtm/issues> or by email to
 <prjctimg@outlook.com>.
 
 # COPYRIGHT

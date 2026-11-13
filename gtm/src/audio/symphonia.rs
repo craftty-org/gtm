@@ -225,6 +225,13 @@ impl Iterator for SymphoniaSource {
                         }
                         match self.decoder.decode(&packet) {
                             Ok(buf) => {
+                                let spec = buf.spec();
+                                if let Some(ch) = NonZeroU16::new(spec.channels().count() as u16) {
+                                    self.channels = ch;
+                                }
+                                if let Some(sr) = NonZeroU32::new(spec.rate()) {
+                                    self.sample_rate = sr;
+                                }
                                 buf.copy_to_vec_interleaved::<f32>(&mut self.buffer);
 
                                 // If seeking, skip entire decoded buffer in one go when possible

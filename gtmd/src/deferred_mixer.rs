@@ -122,6 +122,14 @@ impl Mixer for DeferredMixer {
         self.ensure_mut()?.load_standby_decoded(source)
     }
 
+    fn load_standby_reader(
+        &mut self,
+        reader: Box<dyn std::io::Read + Send>,
+        reopen: Option<Box<dyn gtm::audio::symphonia::StreamingReopen>>,
+    ) -> AudioResult<()> {
+        self.ensure_mut()?.load_standby_reader(reader, reopen)
+    }
+
     fn standby_is_loaded(&self) -> bool {
         self.ensure_ref()
             .map(|m| m.standby_is_loaded())

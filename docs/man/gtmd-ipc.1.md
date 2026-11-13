@@ -50,15 +50,19 @@ make the response ambiguous.
 
 ## Responses
 
-One JSON object per line, newline-terminated:
+Base success response:
 
 ```json
-{"id": 1, "ok": true, "volume": 80}
+{"id": 1, "ok": true}
 ```
 
-`ok` is always present. On failure, `error` carries a human-readable message and
-no other keys. On success, the remaining keys are the command's payload — see
-the tables. A command documented with no payload returns nothing beyond `ok`.
+Commands that return data extend the base response with the fields listed in the command tables (no per-command envelope repetition). Base error response:
+
+```json
+{"id": 1, "ok": false, "error": "..."}
+```
+
+`ok` is always present. On failure, `error` carries a human-readable message and no other keys. On success, remaining keys are command-specific payload fields. A command documented with no payload/`—` returns only the base success response.
 
 ## Events (JSON, command socket)
 
@@ -542,7 +546,7 @@ prjctimg <prjctimg@outlook.com>
 
 # BUGS
 
-Report bugs to <https://github.com/prjctimg/gtm/issues> or by email to
+Report bugs to <https://github.com/craftty-org/gtm/issues> or by email to
 <prjctimg@outlook.com>.
 
 # COPYRIGHT

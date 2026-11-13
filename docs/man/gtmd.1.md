@@ -165,6 +165,18 @@ Stopped → Playing
 :   Reload the configuration and re-scan the library (planned, not yet
     implemented).
 
+# CONFIGURATION
+
+`gtmd` reads `$XDG_CONFIG_HOME/gtm/config.toml` (shared with the `gtm` client) for daemon-relevant keys:
+
+- `resume_on_start` (bool, default `false`) — resume playback on daemon startup.
+- `allow_delete_files` (bool, default `true`) — allow library removal to delete managed audio/sidecar files.
+- `cover_provider` (string, default `auto`) — cover art provider preference.
+- `cover_cache_mb` (integer > 0) — on-disk cover cache budget in MiB.
+- `web_addr` (string or port, default loopback `127.0.0.1:8991`; empty disables) — read-only JSON status endpoint bind.
+- `discord_app_id` (numeric string/int; `discord_id` alias accepted) — Discord Rich Presence application id.
+- `[<provider>]` tables — provider-specific options (e.g. `enabled`, credentials/endpoints); see provider documentation.
+
 # FILES
 
 $XDG_RUNTIME_DIR/gtm/gtmd.sock
@@ -174,9 +186,8 @@ $XDG_DATA_HOME/gtm/library.db
 :   SQLite database containing the music library, playlists, and playback
     history.
 
-$XDG_CONFIG_HOME/gtm/
-:   Configuration directory for daemon state (not read as config.toml — the
-    client-side preferences file is `~/.config/gtm/config.toml`, TUI only).
+$XDG_CONFIG_HOME/gtm/config.toml
+:   Shared client/daemon configuration file. `gtmd` reads the keys listed above and re-reads relevant values where supported (e.g. Discord presence). TUI/client preferences are stored in the same file.
 
 # SEE ALSO
 
@@ -188,7 +199,7 @@ prjctimg <prjctimg@outlook.com>
 
 # BUGS
 
-Report bugs to <https://github.com/prjctimg/gtm/issues> or by email to
+Report bugs to <https://github.com/craftty-org/gtm/issues> or by email to
 <prjctimg@outlook.com>.
 
 # COPYRIGHT

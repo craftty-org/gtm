@@ -24,7 +24,7 @@
 
 set -euo pipefail
 
-REPO="prjctimg/gtm"
+REPO="craftty-org/gtm"
 
 NC='\033[0m'
 MUTED='\033[0;2m'

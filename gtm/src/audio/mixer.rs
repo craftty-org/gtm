@@ -75,6 +75,18 @@ pub trait Mixer: Send + Sync {
         &mut self,
         source: Box<dyn Source<Item = f32> + Send>,
     ) -> AudioResult<()>;
+    /// Load a remote byte transport as the standby source for crossfade.
+    /// Implementations should prefer a decode-thread/ring-buffer path so
+    /// network reads never run on the audio callback thread.
+    fn load_standby_reader(
+        &mut self,
+        _reader: Box<dyn std::io::Read + Send>,
+        _reopen: Option<Box<dyn StreamingReopen>>,
+    ) -> AudioResult<()> {
+        Err(AudioError::OutputError(
+            "standby reader not supported on this backend".into(),
+        ))
+    }
     fn standby_is_loaded(&self) -> bool;
     fn play(&mut self) -> AudioResult<()>;
     fn pause(&mut self) -> AudioResult<()>;
@@ -223,6 +235,13 @@ impl Mixer for AudioMixer {
         source: Box<dyn Source<Item = f32> + Send>,
     ) -> AudioResult<()> {
         self.load_standby_decoded(source)
+    }
+    fn load_standby_reader(
+        &mut self,
+        reader: Box<dyn std::io::Read + Send>,
+        reopen: Option<Box<dyn StreamingReopen>>,
+    ) -> AudioResult<()> {
+        self.load_standby_reader(reader, reopen)
     }
     fn standby_is_loaded(&self) -> bool {
         self.standby_is_loaded()
@@ -909,6 +928,7 @@ impl AudioMixer {
 
         self.standby().stop();
         self.standby().set_volume(0.0);
+        self.standby_duration = Self::probe_duration(path).unwrap_or(0.0);
 
         let (control, source, handle) = Self::start_decode_thread(
             path,
@@ -919,7 +939,36 @@ impl AudioMixer {
             &self.reverb_room_size,
             &self.spectrum,
             &self.wave,
-            PREBUFFER_SAMPLES,
+            PREBUFFER_SAMPLES_REDUCED,
+        )?;
+
+        self.standby().append(self.apply_mono(Box::new(source)));
+        self.standby_control = Some(control);
+        self.standby_decode_handle = Some(handle);
+        Ok(())
+    }
+
+    pub fn load_standby_reader(
+        &mut self,
+        reader: Box<dyn std::io::Read + Send>,
+        reopen: Option<Box<dyn StreamingReopen>>,
+    ) -> AudioResult<()> {
+        Self::stop_decode_thread(&self.standby_control, &mut self.standby_decode_handle);
+
+        self.standby().stop();
+        self.standby().set_volume(0.0);
+        self.standby_duration = 0.0;
+
+        let (control, source, handle) = Self::start_decode_reader(
+            reader,
+            reopen,
+            &self.eq_gains,
+            &self.eq_enabled,
+            &self.pre_gain,
+            &self.reverb_enabled,
+            &self.reverb_room_size,
+            &self.spectrum,
+            &self.wave,
         )?;
 
         self.standby().append(self.apply_mono(Box::new(source)));
