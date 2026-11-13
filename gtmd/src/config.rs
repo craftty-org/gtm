@@ -272,7 +272,8 @@ impl DaemonConfig {
         // Absent means no, which is the safe reading: a config written by an
         // older build has no opinion, and the older behaviour was not to play.
         let resume_on_start = gtm::shared::config::bool_or(toml.as_ref(), "resume_on_start", false);
-        let allow_delete_files = gtm::shared::config::bool_or(toml.as_ref(), "allow_delete_files", true);
+        let allow_delete_files =
+            gtm::shared::config::bool_or(toml.as_ref(), "allow_delete_files", true);
         let providers = ProviderConfig::from_toml(toml.clone());
 
         DaemonConfig {

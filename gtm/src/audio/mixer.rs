@@ -578,9 +578,10 @@ impl AudioMixer {
         std::thread::JoinHandle<()>,
     )> {
         let control = Arc::new(DecodeControl::new());
-        control
-            .visualizer_enabled
-            .store(visualizer_enabled.load(Ordering::Relaxed), Ordering::Relaxed);
+        control.visualizer_enabled.store(
+            visualizer_enabled.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
         let shared = Arc::new(RingBufferInner::new(BUFFER_CAPACITY_SAMPLES));
 
         let thread = DecodeThread::new(
@@ -708,9 +709,10 @@ impl AudioMixer {
         std::thread::JoinHandle<()>,
     )> {
         let control = Arc::new(DecodeControl::new());
-        control
-            .visualizer_enabled
-            .store(visualizer_enabled.load(Ordering::Relaxed), Ordering::Relaxed);
+        control.visualizer_enabled.store(
+            visualizer_enabled.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
         let shared = Arc::new(RingBufferInner::new(BUFFER_CAPACITY_SAMPLES));
 
         let thread = DecodeThread::new_reader(
@@ -907,9 +909,10 @@ impl AudioMixer {
         std::thread::JoinHandle<()>,
     )> {
         let control = Arc::new(DecodeControl::new());
-        control
-            .visualizer_enabled
-            .store(visualizer_enabled.load(Ordering::Relaxed), Ordering::Relaxed);
+        control.visualizer_enabled.store(
+            visualizer_enabled.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
         let shared = Arc::new(RingBufferInner::new(BUFFER_CAPACITY_SAMPLES));
 
         let thread = DecodeThread::new_stream(

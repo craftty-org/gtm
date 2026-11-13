@@ -435,9 +435,10 @@ impl PulseAudioMixer {
         prebuffer_samples: usize,
     ) -> AudioResult<(Arc<DecodeControl>, std::thread::JoinHandle<()>)> {
         let control = Arc::new(DecodeControl::new());
-        control
-            .visualizer_enabled
-            .store(visualizer_enabled.load(std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
+        control.visualizer_enabled.store(
+            visualizer_enabled.load(std::sync::atomic::Ordering::Relaxed),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let thread = DecodeThread::new(
             path.to_string(),
             ring.clone(),
@@ -484,9 +485,10 @@ impl PulseAudioMixer {
         visualizer_enabled: &Arc<AtomicBool>,
     ) -> AudioResult<(Arc<DecodeControl>, std::thread::JoinHandle<()>)> {
         let control = Arc::new(DecodeControl::new());
-        control
-            .visualizer_enabled
-            .store(visualizer_enabled.load(std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
+        control.visualizer_enabled.store(
+            visualizer_enabled.load(std::sync::atomic::Ordering::Relaxed),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let thread = DecodeThread::new_reader(
             reader,
             reopen,
@@ -547,9 +549,10 @@ impl PulseAudioMixer {
         visualizer_enabled: &Arc<AtomicBool>,
     ) -> AudioResult<(Arc<DecodeControl>, std::thread::JoinHandle<()>)> {
         let control = Arc::new(DecodeControl::new());
-        control
-            .visualizer_enabled
-            .store(visualizer_enabled.load(std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
+        control.visualizer_enabled.store(
+            visualizer_enabled.load(std::sync::atomic::Ordering::Relaxed),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let thread = DecodeThread::new_stream(
             source,
             ring.clone(),
@@ -881,7 +884,11 @@ impl Mixer for PulseAudioMixer {
             .expect("failed to spawn PA feed thread");
 
         let ctrl = Arc::new(DecodeControl::new());
-        ctrl.visualizer_enabled.store(self.visualizer_enabled.load(std::sync::atomic::Ordering::Relaxed), std::sync::atomic::Ordering::Relaxed);
+        ctrl.visualizer_enabled.store(
+            self.visualizer_enabled
+                .load(std::sync::atomic::Ordering::Relaxed),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         self.standby_mut().control = Some(ctrl);
         self.standby_mut().decode_handle = Some(handle);
 
