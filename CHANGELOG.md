@@ -17,7 +17,7 @@
   and the 1-second periodic snapshot no longer triggers a full widget
   sweep on every tick.
 
-## [Unreleased]
+## [0.2.98] - 2026-11-20
 
 ### Added
 - **`gtm playlist`** — create, rename, add to, remove from, delete, follow,

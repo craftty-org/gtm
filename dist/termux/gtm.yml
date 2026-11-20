@@ -1,6 +1,6 @@
 control:
     Package: gtm
-    Version: 0.2.83
+    Version: 0.2.98
     Architecture: aarch64
     Maintainer: prjctimg <prjctimg@outlook.com>
     Depends: libpulseaudio

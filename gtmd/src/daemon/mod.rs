@@ -1186,9 +1186,9 @@ impl Cmd {
         {
             return Ok(DaemonRes::Ok);
         }
-        let next = match Daemon::step_next(inner).await {
-            Ok(Some(t)) => t,
-            Ok(None) => {
+        let next = match Daemon::step_next(inner).await? {
+            Some(t) => t,
+            None => {
                 let was_playing = inner.state.read().await.status != PlaybackStatus::Stopped;
                 if was_playing {
                     Daemon::stop_playback(inner).await;
@@ -1197,9 +1197,8 @@ impl Cmd {
                 }
                 return Ok(DaemonRes::Ok);
             }
-            Err(e) => return Err(e),
         };
-        let _ = Cmd::play(inner, &next.path, 0.0, true).await?;
+        Cmd::play(inner, &next.path, 0.0, true).await?;
         Daemon::push_queue_state(inner).await;
         Ok(DaemonRes::Ok)
     }

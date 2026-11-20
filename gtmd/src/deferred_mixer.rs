@@ -44,19 +44,15 @@ impl DeferredMixer {
         if let Some(m) = self.inner.get() {
             return Ok(&**m);
         }
-        match (self.factory)() {
-            Ok(b) => {
-                // A concurrent caller may have won the race; either way the
-                // cell now holds a mixer.
-                let _ = self.inner.set(b);
-                self.inner.get().map(|b| &**b).ok_or_else(|| {
-                    gtm::audio::AudioError::OutputError(
-                        "deferred mixer initialised but missing".into(),
-                    )
-                })
-            }
-            Err(e) => Err(e),
-        }
+        let b = (self.factory)()?;
+        // A concurrent caller may have won the race; either way the
+        // cell now holds a mixer.
+        let _ = self.inner.set(b);
+        self.inner.get().map(|b| &**b).ok_or_else(|| {
+            gtm::audio::AudioError::OutputError(
+                "deferred mixer initialised but missing".into(),
+            )
+        })
     }
 
     fn ensure_mut(&mut self) -> AudioResult<&mut Box<dyn Mixer>> {

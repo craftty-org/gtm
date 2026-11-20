@@ -1,0 +1,31 @@
+version = "1"
+
+[sigil.check]
+description = "Cargo check with gtm workspace features"
+silent = false
+language = "shell"
+run = "cargo check --workspace --features gtm/mpris,gtmd/mpris,gtmd/youtube"
+
+[sigil.test]
+description = "Run workspace tests (CI-preferred)"
+silent = false
+language = "shell"
+run = "cargo test --workspace --features gtm/mpris,gtmd/mpris,gtmd/youtube"
+
+[sigil.fmt]
+description = "Format workspace"
+silent = false
+language = "shell"
+run = "cargo fmt"
+
+[sigil.fmt-check]
+description = "Check formatting"
+silent = false
+language = "shell"
+run = "cargo fmt --check"
+
+[sigil.bench-render]
+description = "Render benchmark markdown from collected stats"
+silent = false
+language = "shell"
+run = "./scripts/bench/render.sh"
