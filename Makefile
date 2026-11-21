@@ -1,18 +1,3 @@
-# Usage:
-#   make          – build all binaries (debug)
-#   make release  – build all binaries (release)
-#   make test     – run all workspace tests
-#   make check    – cargo check + cargo clippy
-#   make clean    – clean build artifacts
-#   make deb      – build .deb packages (requires cargo-deb)
-#   make man      – generate man pages (requires pandoc)
-#   make completions – generate shell completions
-#   make install  – install binaries to $(DESTDIR)$(PREFIX)/bin
-#   make rpm      – build RPM (requires rpmbuild)
-#   make termux       – cross-compile for Android (aarch64, requires cargo-ndk + NDK)
-#   make termux-elf   – strip unsupported ELF sections (requires termux-elf-cleaner)
-#   make deb-termux   – build Termux .deb package (requires termux-create-package)
-
 PREFIX ?= /usr/local
 exec_prefix ?= $(PREFIX)
 datarootdir ?= $(PREFIX)/share
