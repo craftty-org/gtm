@@ -1,5 +1,3 @@
-
-
 # [`📻️ gtm(d)`](https://gtmd.dev)
 
 ![](./screenshots/1.png)
@@ -140,6 +138,11 @@ See [the contributing guide](CONTRIBUTING.md) and
 **theme picker** ![](screenshots/4.png)
 
 **about** ![](screenshots/5.png)
+
+## Disclaimer
+
+This project does not endorse piracy of any kind. Please use subscription plans
+to support the work of artists and creators
 
 ## Acknowledgements
 
