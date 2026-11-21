@@ -321,7 +321,6 @@ impl DaemonConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     fn val(s: &str) -> toml::Value {
         toml::from_str(s).unwrap()
