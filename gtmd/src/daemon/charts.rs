@@ -3,6 +3,34 @@ use super::*;
 use futures::StreamExt;
 use gtm::providers::charts::ChartTrack;
 
+fn charts_cache_path(inner: &DaemonInner, source_id: Option<&str>) -> std::path::PathBuf {
+    let key = source_id.unwrap_or("all");
+    let safe: String = key
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    inner.config.cache_dir.join(format!("charts_{safe}.json"))
+}
+
+fn read_cache<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Option<T> {
+    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+}
+
+fn write_cache<T: serde::Serialize>(path: &std::path::Path, val: &T) {
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(data) = serde_json::to_vec(val) {
+        let _ = std::fs::write(path, data);
+    }
+}
+
 /// Chart providers (Spotify first; further sources plug in via the same trait).
 pub(crate) struct Charts;
 
@@ -18,28 +46,36 @@ impl Charts {
         inner: &DaemonInner,
         source_id: Option<String>,
     ) -> Result<DaemonRes, CoreError> {
+        let cache_path = charts_cache_path(inner, source_id.as_deref());
         let registry = inner.charts.lock().await;
-        match source_id {
+        let fetched = match source_id.as_deref() {
             Some(id) => {
-                if let Some(provider) = registry.get(&id) {
-                    match provider.list_charts().await {
-                        Ok(charts) => Ok(DaemonRes::ChartsListRes { charts }),
-                        Err(e) => Ok(DaemonRes::Error {
-                            message: format!("charts list failed: {e}"),
-                        }),
-                    }
+                if let Some(provider) = registry.get(id) {
+                    provider.list_charts().await.map_err(|e| e.to_string())
+                } else {
+                    return Ok(DaemonRes::Error {
+                        message: format!("unknown chart source: {id}"),
+                    });
+                }
+            }
+            None => registry.list_all_charts().await.map_err(|e| e.to_string()),
+        };
+        match fetched {
+            Ok(charts) => {
+                write_cache(&cache_path, &charts);
+                Ok(DaemonRes::ChartsListRes { charts })
+            }
+            Err(e) => {
+                if let Some(charts) =
+                    read_cache::<Vec<gtm::shared::chart::ChartPlaylist>>(&cache_path)
+                {
+                    Ok(DaemonRes::ChartsListRes { charts })
                 } else {
                     Ok(DaemonRes::Error {
-                        message: format!("unknown chart source: {id}"),
+                        message: format!("charts list failed: {e}"),
                     })
                 }
             }
-            None => match registry.list_all_charts().await {
-                Ok(charts) => Ok(DaemonRes::ChartsListRes { charts }),
-                Err(e) => Ok(DaemonRes::Error {
-                    message: format!("charts list failed: {e}"),
-                }),
-            },
         }
     }
 

@@ -20,6 +20,24 @@ impl App {
         });
     }
 
+    /// Preload network-backed lists so they are cached and ready for browsing.
+    pub(crate) fn preload_network_lists(&mut self) {
+        self.fetch_chart_sources();
+        self.seed_radio_picker(true);
+        let c = self.client.clone();
+        let ipc_tx = self.ipc_tx.clone();
+        tokio::spawn(async move {
+            match c.charts().list(None).await {
+                Ok(charts) => {
+                    let _ = ipc_tx.send(IpcResult::ChartsLoaded(charts));
+                }
+                Err(e) => {
+                    self_err(&ipc_tx, format!("chart preload failed: {e}"));
+                }
+            }
+        });
+    }
+
     /// Pull one of the three history lists for the Playlists view.
     ///
     /// Dispatched on [`HistList`], named rather than numbered. The names are what

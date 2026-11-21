@@ -194,6 +194,7 @@ impl App {
             self.radio.browse_tags.is_empty() || self.radio.browse_countries.is_empty();
         if (force || lists_missing) && !self.radio.browse_pending {
             self.radio.browse_pending = true;
+            let known_tags = self.radio.browse_tags.clone();
             let tags_c = c.clone();
             let tags_tx = ipc_tx.clone();
             tokio::spawn(async move {
@@ -203,10 +204,11 @@ impl App {
                     }
                     Err(e) => {
                         self_err(&tags_tx, format!("radio tags failed: {e}"));
-                        let _ = tags_tx.send(IpcResult::RadioTags(Vec::new()));
+                        let _ = tags_tx.send(IpcResult::RadioTags(known_tags));
                     }
                 }
             });
+            let known_countries = self.radio.browse_countries.clone();
             let countries_c = c.clone();
             let countries_tx = ipc_tx.clone();
             tokio::spawn(async move {
@@ -216,7 +218,7 @@ impl App {
                     }
                     Err(e) => {
                         self_err(&countries_tx, format!("radio countries failed: {e}"));
-                        let _ = countries_tx.send(IpcResult::RadioCountries(Vec::new()));
+                        let _ = countries_tx.send(IpcResult::RadioCountries(known_countries));
                     }
                 }
             });
@@ -245,7 +247,6 @@ impl App {
 
     /// (Re)load the stations for the tag/country selected from the Root view.
     pub fn fetch_browse_stations(&mut self) {
-        self.radio.browse_stations.clear();
         self.radio.browse_stations_pending = true;
         self.radio.section = RadioSection::Stations;
         let (c, ipc_tx) = (self.client.clone(), self.ipc_tx.clone());

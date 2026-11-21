@@ -365,6 +365,10 @@ impl App {
 
         self.is_ready = true;
 
+        // Preload network-backed lists in the background so charts/radio are
+        // ready when the user opens them, and refresh lazily when data arrives.
+        self.preload_network_lists();
+
         // Seed the track-info popup so the first row's details are visible
         // immediately when the middle pane starts focused, and warm the left
         // pane's own card covers alongside it — the two draw from different

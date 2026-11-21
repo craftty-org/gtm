@@ -219,6 +219,8 @@ pub struct DecodeThread {
     pre_gain: PreGain,
     reverb_enabled: Arc<AtomicBool>,
     reverb_room_size: Arc<Mutex<f32>>,
+    pause_dry_gain: Arc<AtomicU32>,
+    pause_tail_active: Arc<AtomicBool>,
     spectrum: Arc<Mutex<Vec<f32>>>,
     wave: WaveformShared,
     prebuffer_samples: usize,
@@ -257,6 +259,8 @@ impl DecodeThread {
         pre_gain: PreGain,
         reverb_enabled: Arc<AtomicBool>,
         reverb_room_size: Arc<Mutex<f32>>,
+        pause_dry_gain: Arc<AtomicU32>,
+        pause_tail_active: Arc<AtomicBool>,
         spectrum: Arc<Mutex<Vec<f32>>>,
         wave: WaveformShared,
         prebuffer_samples: usize,
@@ -270,6 +274,8 @@ impl DecodeThread {
             pre_gain,
             reverb_enabled,
             reverb_room_size,
+            pause_dry_gain,
+            pause_tail_active,
             spectrum,
             wave,
             prebuffer_samples,
@@ -291,6 +297,8 @@ impl DecodeThread {
         pre_gain: PreGain,
         reverb_enabled: Arc<AtomicBool>,
         reverb_room_size: Arc<Mutex<f32>>,
+        pause_dry_gain: Arc<AtomicU32>,
+        pause_tail_active: Arc<AtomicBool>,
         spectrum: Arc<Mutex<Vec<f32>>>,
         wave: WaveformShared,
         prebuffer_samples: usize,
@@ -307,6 +315,8 @@ impl DecodeThread {
             pre_gain,
             reverb_enabled,
             reverb_room_size,
+            pause_dry_gain,
+            pause_tail_active,
             spectrum,
             wave,
             prebuffer_samples,
@@ -329,6 +339,8 @@ impl DecodeThread {
         pre_gain: PreGain,
         reverb_enabled: Arc<AtomicBool>,
         reverb_room_size: Arc<Mutex<f32>>,
+        pause_dry_gain: Arc<AtomicU32>,
+        pause_tail_active: Arc<AtomicBool>,
         spectrum: Arc<Mutex<Vec<f32>>>,
         wave: WaveformShared,
         prebuffer_samples: usize,
@@ -342,6 +354,8 @@ impl DecodeThread {
             pre_gain,
             reverb_enabled,
             reverb_room_size,
+            pause_dry_gain,
+            pause_tail_active,
             spectrum,
             wave,
             prebuffer_samples,
@@ -510,22 +524,29 @@ impl DecodeThread {
                     continue;
                 }
 
-                // Read raw sample from decoder
-                let sample = match source_iter.next() {
-                    Some(s) => s,
-                    None => {
-                        // EOF: drain ring buffer then signal finished
-                        while self.shared.available() > 0 {
-                            std::thread::sleep(std::time::Duration::from_micros(50));
-                            if !self.control.running.load(Ordering::Acquire) {
-                                self.control.seeking.store(false, Ordering::Release);
-                                return;
+                let pause_dry = f32::from_bits(self.pause_dry_gain.load(Ordering::Relaxed));
+                let pause_tail = self.pause_tail_active.load(Ordering::Relaxed);
+                // During pause tail, stop consuming source and feed silence so the
+                // reverb can ring out without advancing the track position.
+                let (sample, from_source) = if pause_tail && pause_dry <= 0.0 {
+                    (0.0f32, false)
+                } else {
+                    match source_iter.next() {
+                        Some(s) => (s, true),
+                        None => {
+                            // EOF: drain ring buffer then signal finished
+                            while self.shared.available() > 0 {
+                                std::thread::sleep(std::time::Duration::from_micros(50));
+                                if !self.control.running.load(Ordering::Acquire) {
+                                    self.control.seeking.store(false, Ordering::Release);
+                                    return;
+                                }
                             }
+                            self.control.seeking.store(false, Ordering::Release);
+                            self.shared.set_finished(true);
+                            self.control.ready.store(true, Ordering::Release);
+                            return;
                         }
-                        self.control.seeking.store(false, Ordering::Release);
-                        self.shared.set_finished(true);
-                        self.control.ready.store(true, Ordering::Release);
-                        return;
                     }
                 };
 
@@ -534,7 +555,11 @@ impl DecodeThread {
                 // than hoisted: a relaxed atomic load is one instruction, and
                 // hoisting would freeze the gain for the length of a track,
                 // which is the opposite of what the control is for.
-                let sample = sample * self.pre_gain.amp();
+                let sample = if from_source {
+                    sample * self.pre_gain.amp() * pause_dry
+                } else {
+                    0.0
+                };
 
                 // Apply EQ
                 let eq_sample = if self.eq_enabled.load(Ordering::Relaxed) {
@@ -561,15 +586,26 @@ impl DecodeThread {
                     sample
                 };
 
-                // Apply reverb
-                let final_sample = if self.reverb_enabled.load(Ordering::Relaxed) {
+                // Apply reverb (also active during pause tail so the echo rings out)
+                let reverb_on = self.reverb_enabled.load(Ordering::Relaxed)
+                    || self.pause_tail_active.load(Ordering::Relaxed);
+                let final_sample = if reverb_on {
                     if channels == 2 {
                         let ch = sample_count % 2;
                         if ch == 0 {
                             // This is a left sample: we need the right sample too
-                            match source_iter.next() {
+                            let right_raw_opt = if from_source {
+                                source_iter.next()
+                            } else {
+                                Some(0.0)
+                            };
+                            match right_raw_opt {
                                 Some(right_raw) => {
-                                    let right_raw = right_raw * self.pre_gain.amp();
+                                    let right_raw = if from_source {
+                                        right_raw * self.pre_gain.amp() * pause_dry
+                                    } else {
+                                        0.0
+                                    };
                                     let right_eq = if self.eq_enabled.load(Ordering::Relaxed) {
                                         apply_headroom(
                                             eq_right.filter_mono(right_raw),

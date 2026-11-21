@@ -6,7 +6,7 @@
 
 use std::fs::File;
 use std::io::BufReader;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -187,6 +187,10 @@ pub struct AudioMixer {
     standby_control: Option<Arc<DecodeControl>>,
     standby_decode_handle: Option<std::thread::JoinHandle<()>>,
     underrun_since: Option<Instant>,
+    // ─── Pause tail (reverb echo on pause) ───
+    pause_dry_gain: Arc<AtomicU32>,
+    pause_tail_active: Arc<AtomicBool>,
+    pause_tail_started: Option<Instant>,
     // ─── Spectrum ───
     spectrum: Arc<Mutex<Vec<f32>>>,
     // ─── Waveform (Wave/Stereo visualizer modes) ───
@@ -453,6 +457,9 @@ impl AudioMixer {
             standby_control: None,
             standby_decode_handle: None,
             underrun_since: None,
+            pause_dry_gain: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            pause_tail_active: Arc::new(AtomicBool::new(false)),
+            pause_tail_started: None,
             spectrum: Arc::new(Mutex::new(Vec::new())),
             wave: WaveformShared::default(),
             visualizer_enabled: Arc::new(AtomicBool::new(true)),
@@ -568,6 +575,8 @@ impl AudioMixer {
         pre_gain: &PreGain,
         reverb_enabled: &Arc<AtomicBool>,
         reverb_room_size: &Arc<Mutex<f32>>,
+        pause_dry_gain: &Arc<AtomicU32>,
+        pause_tail_active: &Arc<AtomicBool>,
         spectrum: &Arc<Mutex<Vec<f32>>>,
         wave: &WaveformShared,
         visualizer_enabled: &Arc<AtomicBool>,
@@ -593,6 +602,8 @@ impl AudioMixer {
             pre_gain.clone(),
             reverb_enabled.clone(),
             reverb_room_size.clone(),
+            pause_dry_gain.clone(),
+            pause_tail_active.clone(),
             spectrum.clone(),
             wave.clone(),
             prebuffer_samples,
@@ -640,6 +651,8 @@ impl AudioMixer {
             &self.pre_gain,
             &self.reverb_enabled,
             &self.reverb_room_size,
+            &self.pause_dry_gain,
+            &self.pause_tail_active,
             &self.spectrum,
             &self.wave,
             &self.visualizer_enabled,
@@ -700,6 +713,8 @@ impl AudioMixer {
         pre_gain: &PreGain,
         reverb_enabled: &Arc<AtomicBool>,
         reverb_room_size: &Arc<Mutex<f32>>,
+        pause_dry_gain: &Arc<AtomicU32>,
+        pause_tail_active: &Arc<AtomicBool>,
         spectrum: &Arc<Mutex<Vec<f32>>>,
         wave: &WaveformShared,
         visualizer_enabled: &Arc<AtomicBool>,
@@ -725,6 +740,8 @@ impl AudioMixer {
             pre_gain.clone(),
             reverb_enabled.clone(),
             reverb_room_size.clone(),
+            pause_dry_gain.clone(),
+            pause_tail_active.clone(),
             spectrum.clone(),
             wave.clone(),
             PREBUFFER_SAMPLES,
@@ -782,6 +799,8 @@ impl AudioMixer {
             &self.pre_gain,
             &self.reverb_enabled,
             &self.reverb_room_size,
+            &self.pause_dry_gain,
+            &self.pause_tail_active,
             &self.spectrum,
             &self.wave,
             &self.visualizer_enabled,
@@ -849,6 +868,8 @@ impl AudioMixer {
             &self.pre_gain,
             &self.reverb_enabled,
             &self.reverb_room_size,
+            &self.pause_dry_gain,
+            &self.pause_tail_active,
             &self.spectrum,
             &self.wave,
             &self.visualizer_enabled,
@@ -900,6 +921,8 @@ impl AudioMixer {
         pre_gain: &PreGain,
         reverb_enabled: &Arc<AtomicBool>,
         reverb_room_size: &Arc<Mutex<f32>>,
+        pause_dry_gain: &Arc<AtomicU32>,
+        pause_tail_active: &Arc<AtomicBool>,
         spectrum: &Arc<Mutex<Vec<f32>>>,
         wave: &WaveformShared,
         visualizer_enabled: &Arc<AtomicBool>,
@@ -924,6 +947,8 @@ impl AudioMixer {
             pre_gain.clone(),
             reverb_enabled.clone(),
             reverb_room_size.clone(),
+            pause_dry_gain.clone(),
+            pause_tail_active.clone(),
             spectrum.clone(),
             wave.clone(),
             PREBUFFER_SAMPLES_REDUCED,
@@ -972,6 +997,8 @@ impl AudioMixer {
             &self.pre_gain,
             &self.reverb_enabled,
             &self.reverb_room_size,
+            &self.pause_dry_gain,
+            &self.pause_tail_active,
             &self.spectrum,
             &self.wave,
             &self.visualizer_enabled,
@@ -1003,6 +1030,8 @@ impl AudioMixer {
             &self.pre_gain,
             &self.reverb_enabled,
             &self.reverb_room_size,
+            &self.pause_dry_gain,
+            &self.pause_tail_active,
             &self.spectrum,
             &self.wave,
             &self.visualizer_enabled,
@@ -1037,15 +1066,32 @@ impl AudioMixer {
     }
 
     pub fn play(&mut self) -> AudioResult<()> {
-        if self.active().is_paused() {
-            self.active().play();
-            let vol = volume_ratio(self.volume.load(Ordering::SeqCst));
-            self.active().set_volume(vol);
-        }
         if self.pending_pause {
+            let in_tail = self.pause_tail_started.is_some();
+            let frozen_pos = *self.position.lock().unwrap();
             self.pending_pause = false;
             self.pause_fade_start = None;
+            self.pause_tail_started = None;
+            self.pause_dry_gain
+                .store(1.0f32.to_bits(), Ordering::Relaxed);
+            self.pause_tail_active.store(false, Ordering::Relaxed);
             let vol = volume_ratio(self.stored_volume.min(MAX_VOLUME));
+            self.active().set_volume(vol);
+            if self.active().is_paused() {
+                self.active().play();
+            }
+            // If we were in tail phase, source wasn't consumed but the ring
+            // buffer may contain tail audio; seek to flush it and resume cleanly.
+            if in_tail {
+                if let Some(ref ctrl) = self.active_control {
+                    ctrl.signal_seek(frozen_pos);
+                }
+                *self.position.lock().unwrap() = frozen_pos;
+                *self.start_pos.lock().unwrap() = frozen_pos;
+            }
+        } else if self.active().is_paused() {
+            self.active().play();
+            let vol = volume_ratio(self.volume.load(Ordering::SeqCst));
             self.active().set_volume(vol);
         }
         *self.start_time.lock().unwrap() = Some(Instant::now());
@@ -1054,12 +1100,20 @@ impl AudioMixer {
     }
 
     pub fn pause(&mut self) -> AudioResult<()> {
-        if self.active().is_paused() {
+        if self.active().is_paused() || self.pending_pause {
             return Ok(());
         }
         self.stored_volume = self.volume.load(Ordering::SeqCst);
         self.pending_pause = true;
         self.pause_fade_start = Some(Instant::now());
+        self.pause_tail_started = None;
+        self.pause_dry_gain
+            .store(1.0f32.to_bits(), Ordering::Relaxed);
+        self.pause_tail_active.store(true, Ordering::Relaxed);
+        // Keep player at full volume so the reverb tail is audible; the dry
+        // signal is faded in the decode thread via pause_dry_gain.
+        self.active()
+            .set_volume(volume_ratio(self.stored_volume.min(MAX_VOLUME)));
         Ok(())
     }
 
@@ -1331,22 +1385,50 @@ impl AudioMixer {
                 Some(s) => s,
                 None => return Ok(None),
             };
-            const FADE_MS: f64 = 150.0;
-            let elapsed = fade_start.elapsed().as_secs_f64() * 1000.0;
-            if elapsed >= FADE_MS {
-                self.pending_pause = false;
-                self.pause_fade_start = None;
-                self.active().pause();
-                let paused_pos = self.track_position();
-                *self.position.lock().unwrap() = paused_pos;
-                *self.start_pos.lock().unwrap() = paused_pos;
-                *self.start_time.lock().unwrap() = None;
-                self.playing.store(false, Ordering::SeqCst);
+            const DRY_FADE_MS: f64 = 220.0;
+            const TAIL_MS: f64 = 1600.0;
+            let elapsed_ms = fade_start.elapsed().as_secs_f64() * 1000.0;
+            if elapsed_ms < DRY_FADE_MS {
+                // Fade dry signal to silence; reverb stays active for the tail.
+                let progress = (elapsed_ms / DRY_FADE_MS).clamp(0.0, 1.0) as f32;
+                self.pause_dry_gain
+                    .store((1.0 - progress).to_bits(), Ordering::Relaxed);
+                self.active()
+                    .set_volume(volume_ratio(self.stored_volume.min(MAX_VOLUME)));
             } else {
-                let progress = elapsed / FADE_MS;
-                let start = volume_ratio(self.stored_volume.min(MAX_VOLUME));
-                let target = start * (1.0 - progress as f32);
-                self.active().set_volume(target);
+                self.pause_dry_gain
+                    .store(0.0f32.to_bits(), Ordering::Relaxed);
+                if self.pause_tail_started.is_none() {
+                    self.pause_tail_started = Some(Instant::now());
+                    // Freeze position at the point where the dry signal is gone;
+                    // from here on we feed silence to the reverb so the source
+                    // position does not advance.
+                    let paused_pos = self.track_position();
+                    *self.position.lock().unwrap() = paused_pos;
+                    *self.start_pos.lock().unwrap() = paused_pos;
+                    *self.start_time.lock().unwrap() = None;
+                }
+                let tail_elapsed = self
+                    .pause_tail_started
+                    .map(|t| t.elapsed().as_secs_f64() * 1000.0)
+                    .unwrap_or(0.0);
+                if tail_elapsed >= TAIL_MS {
+                    self.pending_pause = false;
+                    self.pause_fade_start = None;
+                    self.pause_tail_started = None;
+                    self.pause_dry_gain
+                        .store(1.0f32.to_bits(), Ordering::Relaxed);
+                    self.pause_tail_active.store(false, Ordering::Relaxed);
+                    self.active().pause();
+                    self.playing.store(false, Ordering::SeqCst);
+                } else {
+                    // Keep player running so the reverb tail can ring out.
+                    if self.active().is_paused() {
+                        self.active().play();
+                    }
+                    self.active()
+                        .set_volume(volume_ratio(self.stored_volume.min(MAX_VOLUME)));
+                }
             }
         }
 

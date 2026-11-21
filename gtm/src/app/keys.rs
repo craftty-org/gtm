@@ -1270,12 +1270,7 @@ impl App {
                                     if pos < self.charts.sources.len() {
                                         self.charts.selected_source = Some(pos);
                                         self.charts.selected_chart = None;
-                                        self.charts.charts.clear();
-                                        self.charts.chart_tracks.clear();
-                                        // The list is empty until the request
-                                        // lands, so the card must go now rather
-                                        // than describe a source that is no
-                                        // longer the highlighted thing.
+                                        // Keep existing lists visible until fresh data arrives.
                                         self.select_row(0);
                                         let source_id = self.charts.sources[pos].id.clone();
                                         let c = self.client.clone();
@@ -1304,7 +1299,7 @@ impl App {
                                     let pos = self.list_pos();
                                     if pos < self.charts.charts.len() {
                                         self.charts.selected_chart = Some(pos);
-                                        self.charts.chart_tracks.clear();
+                                        // Keep existing tracks visible until fresh data arrives.
                                         self.select_row(0);
                                         let source_id = self
                                             .charts
@@ -3966,6 +3961,15 @@ impl App {
                                     self.on_picker_opened(PickerId::Radio);
                                 } else if action == "play stream url" {
                                     self.pickers.open(PickerId::LoadStream);
+                                } else if action == "preload network lists" {
+                                    self.preload_network_lists();
+                                    self.notify_titled(
+                                        "Network",
+                                        "Preloading charts and radio lists...",
+                                        NotificationKind::Info,
+                                        true,
+                                        NotifType::NowPlaying,
+                                    );
                                 }
                             }
                             // If the action opened a sub-picker it was stacked on

@@ -333,6 +333,11 @@ impl CommandPalette {
                 keys: "Alt+o",
                 hint: "play stream url",
             },
+            Command {
+                label: "Preload Network Lists",
+                keys: "",
+                hint: "preload network lists",
+            },
         ]
     }
 }
@@ -346,5 +351,5 @@ pub const COMMAND_GROUPS: &[(&str, usize)] = &[
     ("Playback", 14),
     ("Library & Queue", 26),
     ("View & Overlays", 15),
-    ("System", 6),
+    ("System", 7),
 ];
