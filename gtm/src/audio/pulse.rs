@@ -246,7 +246,6 @@ pub struct PulseAudioMixer {
     standby_duration: f64,
     pending_pause: bool,
     pause_fade_start: Option<Instant>,
-    pause_tail_started: Option<Instant>,
     stored_volume: u8,
     user_volume: Arc<AtomicU8>,
 
@@ -287,7 +286,6 @@ impl PulseAudioMixer {
             standby_duration: 0.0,
             pending_pause: false,
             pause_fade_start: None,
-            pause_tail_started: None,
             stored_volume: MAX_VOLUME,
             user_volume: Arc::new(AtomicU8::new(MAX_VOLUME)),
             eq_gains: EqGains::new_flat(),

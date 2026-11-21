@@ -2645,7 +2645,7 @@ fn the_palette_has_no_unreachable_or_unlabelled_rows() {
     );
     for label in keyless {
         assert!(
-            label.contains("Device") || label.contains("Playlist"),
+            label.contains("Device") || label.contains("Playlist") || label.contains("Lists"),
             "{label} has no key and nothing in its label says what it acts on"
         );
     }

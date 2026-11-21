@@ -555,11 +555,8 @@ impl DecodeThread {
                 // than hoisted: a relaxed atomic load is one instruction, and
                 // hoisting would freeze the gain for the length of a track,
                 // which is the opposite of what the control is for.
-                let sample = if from_source {
-                    sample * self.pre_gain.amp() * pause_dry
-                } else {
-                    0.0
-                };
+                let sample = sample * self.pre_gain.amp();
+                let sample = if from_source { sample * pause_dry } else { 0.0 };
 
                 // Apply EQ
                 let eq_sample = if self.eq_enabled.load(Ordering::Relaxed) {
@@ -601,8 +598,9 @@ impl DecodeThread {
                             };
                             match right_raw_opt {
                                 Some(right_raw) => {
+                                    let right_raw = right_raw * self.pre_gain.amp();
                                     let right_raw = if from_source {
-                                        right_raw * self.pre_gain.amp() * pause_dry
+                                        right_raw * pause_dry
                                     } else {
                                         0.0
                                     };
