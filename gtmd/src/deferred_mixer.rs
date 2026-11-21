@@ -49,9 +49,7 @@ impl DeferredMixer {
         // cell now holds a mixer.
         let _ = self.inner.set(b);
         self.inner.get().map(|b| &**b).ok_or_else(|| {
-            gtm::audio::AudioError::OutputError(
-                "deferred mixer initialised but missing".into(),
-            )
+            gtm::audio::AudioError::OutputError("deferred mixer initialised but missing".into())
         })
     }
 

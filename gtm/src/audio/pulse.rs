@@ -6,7 +6,7 @@
 use std::fs::File;
 use std::io::BufReader;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
@@ -246,6 +246,7 @@ pub struct PulseAudioMixer {
     standby_duration: f64,
     pending_pause: bool,
     pause_fade_start: Option<Instant>,
+    pause_tail_started: Option<Instant>,
     stored_volume: u8,
     user_volume: Arc<AtomicU8>,
 
@@ -254,6 +255,8 @@ pub struct PulseAudioMixer {
     pre_gain: PreGain,
     reverb_enabled: Arc<AtomicBool>,
     reverb_room_size: Arc<Mutex<f32>>,
+    pause_dry_gain: Arc<AtomicU32>,
+    pause_tail_active: Arc<AtomicBool>,
     spectrum: Arc<Mutex<Vec<f32>>>,
     visualizer_enabled: Arc<AtomicBool>,
 }
@@ -284,6 +287,7 @@ impl PulseAudioMixer {
             standby_duration: 0.0,
             pending_pause: false,
             pause_fade_start: None,
+            pause_tail_started: None,
             stored_volume: MAX_VOLUME,
             user_volume: Arc::new(AtomicU8::new(MAX_VOLUME)),
             eq_gains: EqGains::new_flat(),
@@ -291,6 +295,8 @@ impl PulseAudioMixer {
             pre_gain: PreGain::default(),
             reverb_enabled: Arc::new(AtomicBool::new(false)),
             reverb_room_size: Arc::new(Mutex::new(0.3)),
+            pause_dry_gain: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            pause_tail_active: Arc::new(AtomicBool::new(false)),
             spectrum: Arc::new(Mutex::new(Vec::new())),
             visualizer_enabled: Arc::new(AtomicBool::new(true)),
         })
@@ -430,6 +436,8 @@ impl PulseAudioMixer {
         pre_gain: &PreGain,
         reverb_enabled: &Arc<AtomicBool>,
         reverb_room_size: &Arc<Mutex<f32>>,
+        pause_dry_gain: &Arc<AtomicU32>,
+        pause_tail_active: &Arc<AtomicBool>,
         spectrum: &Arc<Mutex<Vec<f32>>>,
         visualizer_enabled: &Arc<AtomicBool>,
         prebuffer_samples: usize,
@@ -448,6 +456,8 @@ impl PulseAudioMixer {
             pre_gain.clone(),
             reverb_enabled.clone(),
             reverb_room_size.clone(),
+            pause_dry_gain.clone(),
+            pause_tail_active.clone(),
             spectrum.clone(),
             WaveformShared::default(),
             prebuffer_samples,
@@ -481,6 +491,8 @@ impl PulseAudioMixer {
         pre_gain: &PreGain,
         reverb_enabled: &Arc<AtomicBool>,
         reverb_room_size: &Arc<Mutex<f32>>,
+        pause_dry_gain: &Arc<AtomicU32>,
+        pause_tail_active: &Arc<AtomicBool>,
         spectrum: &Arc<Mutex<Vec<f32>>>,
         visualizer_enabled: &Arc<AtomicBool>,
     ) -> AudioResult<(Arc<DecodeControl>, std::thread::JoinHandle<()>)> {
@@ -499,6 +511,8 @@ impl PulseAudioMixer {
             pre_gain.clone(),
             reverb_enabled.clone(),
             reverb_room_size.clone(),
+            pause_dry_gain.clone(),
+            pause_tail_active.clone(),
             spectrum.clone(),
             WaveformShared::default(),
             PREBUFFER_SAMPLES_REDUCED,
@@ -545,6 +559,8 @@ impl PulseAudioMixer {
         pre_gain: &PreGain,
         reverb_enabled: &Arc<AtomicBool>,
         reverb_room_size: &Arc<Mutex<f32>>,
+        pause_dry_gain: &Arc<AtomicU32>,
+        pause_tail_active: &Arc<AtomicBool>,
         spectrum: &Arc<Mutex<Vec<f32>>>,
         visualizer_enabled: &Arc<AtomicBool>,
     ) -> AudioResult<(Arc<DecodeControl>, std::thread::JoinHandle<()>)> {
@@ -562,6 +578,8 @@ impl PulseAudioMixer {
             pre_gain.clone(),
             reverb_enabled.clone(),
             reverb_room_size.clone(),
+            pause_dry_gain.clone(),
+            pause_tail_active.clone(),
             spectrum.clone(),
             WaveformShared::default(),
             PREBUFFER_SAMPLES_REDUCED,
@@ -633,6 +651,8 @@ impl Mixer for PulseAudioMixer {
             &self.pre_gain,
             &self.reverb_enabled,
             &self.reverb_room_size,
+            &self.pause_dry_gain,
+            &self.pause_tail_active,
             &self.spectrum,
             &self.visualizer_enabled,
             PREBUFFER_SAMPLES,
@@ -690,6 +710,8 @@ impl Mixer for PulseAudioMixer {
             &self.pre_gain,
             &self.reverb_enabled,
             &self.reverb_room_size,
+            &self.pause_dry_gain,
+            &self.pause_tail_active,
             &self.spectrum,
             &self.visualizer_enabled,
         )?;
@@ -735,6 +757,8 @@ impl Mixer for PulseAudioMixer {
             &self.pre_gain,
             &self.reverb_enabled,
             &self.reverb_room_size,
+            &self.pause_dry_gain,
+            &self.pause_tail_active,
             &self.spectrum,
             &self.visualizer_enabled,
         )?;
@@ -789,6 +813,8 @@ impl Mixer for PulseAudioMixer {
             &self.pre_gain,
             &self.reverb_enabled,
             &self.reverb_room_size,
+            &self.pause_dry_gain,
+            &self.pause_tail_active,
             &self.spectrum,
             &self.visualizer_enabled,
             PREBUFFER_SAMPLES,
@@ -830,6 +856,8 @@ impl Mixer for PulseAudioMixer {
             &self.pre_gain,
             &self.reverb_enabled,
             &self.reverb_room_size,
+            &self.pause_dry_gain,
+            &self.pause_tail_active,
             &self.spectrum,
             &self.visualizer_enabled,
         )?;
