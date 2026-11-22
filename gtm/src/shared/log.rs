@@ -66,3 +66,15 @@ pub fn redirect_stderr() -> std::os::unix::io::RawFd {
     }
     original_fd
 }
+
+/// Debug-log each named variable and its value as `name = {:?}`;
+/// `log_vars!(path, start_pos)` logs both.
+macro_rules! log_vars {
+    ($($v:expr),+ $(,)?) => {
+        {
+            use crate::shared::log::log;
+            $(log(&format!("{} = {:?}", stringify!($v), $v));)+
+        }
+    };
+}
+pub(crate) use log_vars;

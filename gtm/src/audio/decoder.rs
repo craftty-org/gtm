@@ -15,6 +15,7 @@ use fundsp::prelude32::*;
 use rodio::Source;
 
 use crate::shared::global::{EQ_DEFAULT_Q, EQ_FREQUENCIES};
+use crate::shared::log::log_vars;
 
 use crate::audio::buffer::{DecodeControl, SharedRingBuffer};
 use crate::audio::eq::{EqGains, PreGain};
@@ -385,7 +386,10 @@ impl DecodeThread {
             // Create decoder for current position
             let raw = match &mut self.source {
                 DecodeSource::File { path } => match SymphoniaSource::from_file(path, start_pos) {
-                    Ok(s) => s,
+                    Ok(s) => {
+                        log_vars!(path, start_pos, s.sample_rate(), s.channels());
+                        s
+                    }
                     Err(e) => {
                         log::error!("decode thread: failed to open {}: {e}", path);
                         self.shared.set_finished(true);

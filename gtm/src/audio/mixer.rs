@@ -24,6 +24,7 @@ use crate::audio::mono::MonoSource;
 use crate::audio::symphonia::{StreamingReopen, SymphoniaSource};
 use crate::audio::wave::{WAVEFORM_FRESHNESS, WaveformShared};
 use crate::shared::global::{EqPreset, ReverbConfig};
+use crate::shared::log::log_vars;
 use crate::shared::{MAX_VOLUME, volume_ratio};
 
 /// How long a provider-decoded source is given to prime its ring before the
@@ -638,6 +639,7 @@ impl AudioMixer {
             PREBUFFER_SAMPLES_REDUCED
         };
         self.first_track = false;
+        log_vars!(path, start_pos, prebuffer);
 
         // Open, probe and prime the incoming source before touching the
         // outgoing one. The old track keeps sounding through this whole step,
@@ -858,6 +860,7 @@ impl AudioMixer {
         start_pos: f64,
         duration_secs: f64,
     ) -> AudioResult<()> {
+        log_vars!(start_pos, duration_secs);
         // Provider sources are drained into their own ring first. The outgoing
         // track stays active until that ring is primed, so connecting and
         // waiting for the provider cannot silence it.

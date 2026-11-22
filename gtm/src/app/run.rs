@@ -903,7 +903,14 @@ impl App {
                         let track_differs = state.current_track.as_ref().map(|t| &t.path)
                             != self.state.current_track.as_ref().map(|t| &t.path);
                         if state.version >= self.state.version || restarted || track_differs {
+                            let was_connecting = self.state.status == PlaybackStatus::Connecting;
                             self.state = *state;
+                            // The daemon's snapshot still says Stopped until the
+                            // play lands; the spinner belongs to the press the
+                            // client already made.
+                            if was_connecting && self.state.status != PlaybackStatus::Playing {
+                                self.state.status = PlaybackStatus::Connecting;
+                            }
                             self.client.seed_clock(&self.state).await;
                             // A full widget sweep is owed only when the mirror
                             // cannot be reconciled field-by-field: a restart or
@@ -1312,6 +1319,11 @@ impl App {
                         }
                     }
                     IpcResult::Error(e) => {
+                        // The play the client optimistically marked connecting
+                        // never started; clear the spinner with it.
+                        if self.state.status == PlaybackStatus::Connecting {
+                            self.state.status = PlaybackStatus::Stopped;
+                        }
                         // Generic failures go to the log file and the
                         // notifications picker instead of a floating card.
                         self.notify_typed(

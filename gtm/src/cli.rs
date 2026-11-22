@@ -276,6 +276,7 @@ pub fn run(socket: Option<String>, json: bool, verbose: bool, cmd: &CliCommand) 
                             PlaybackStatus::Playing => "Playing",
                             PlaybackStatus::Paused => "Paused",
                             PlaybackStatus::Stopped => "Stopped",
+                            PlaybackStatus::Connecting => "Connecting",
                         };
                         print!(
                             "\x1b[H\x1b[J{status_label}: {track} | {elapsed}s / {dur}s | {}%",
@@ -382,6 +383,7 @@ fn format_status(state: &crate::shared::global::DaemonState) -> String {
         PlaybackStatus::Playing => "\x1b[32m▶ Playing\x1b[0m",
         PlaybackStatus::Paused => "\x1b[33m⏸ Paused\x1b[0m",
         PlaybackStatus::Stopped => "\x1b[31m⏹ Stopped\x1b[0m",
+        PlaybackStatus::Connecting => "\x1b[36m⠋ Connecting\x1b[0m",
     };
     let track_str = state
         .current_track

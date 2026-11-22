@@ -543,6 +543,19 @@ impl Footer {
 
     fn playback(app: &App) -> String {
         match app.state.status {
+            PlaybackStatus::Connecting => {
+                // Animated braille spinner, one frame per 100 ms; the main
+                // loop redraws every ~10 ticks so it moves.
+                const SPINNER: [&str; 10] = [
+                    "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
+                ];
+                let frame = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or_default()
+                    / 100;
+                format!("{} connecting", SPINNER[frame as usize % SPINNER.len()])
+            }
             PlaybackStatus::Playing => {
                 if use_nerd_fonts() {
                     "\u{f040a}".into()

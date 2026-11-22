@@ -23,6 +23,7 @@ use librespot_playback::{NUM_CHANNELS, SAMPLE_RATE};
 use tracing::{info, warn};
 
 use gtm::shared::ipc::DaemonEvent;
+use crate::log_vars;
 
 use super::LIBRESPOT_CLIENT_ID;
 
@@ -744,6 +745,7 @@ impl StreamManager {
         duration_secs: f64,
         spec: &SessionSpec<'_>,
     ) -> Result<PcmStreamSource, String> {
+        log_vars!(uri, start_ms, duration_secs);
         self.ensure_session(spec).await?;
         let parsed = SpotifyUri::from_uri(uri).map_err(|e| format!("bad spotify uri: {e}"))?;
 
@@ -818,6 +820,12 @@ impl StreamManager {
             None => true,
             Some(p) => p.is_invalid(),
         }
+    }
+
+    /// True while the session and player are up and live, so the next load
+    /// reuses them instead of reconnecting.
+    pub fn session_is_valid(&self) -> bool {
+        !self.is_dead()
     }
 
     /// How long the current stream has gone without a packet, or `None` when

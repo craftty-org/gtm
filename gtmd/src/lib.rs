@@ -28,6 +28,15 @@ pub use providers::lrclib as lyrics;
 pub use providers::youtube;
 pub use providers::{charts, deezer, lastfm, musicbrainz, podcast, radio, spotify};
 
+/// Debug-log each named variable and its value as `name = {:?}`;
+/// `log_vars!(path, start_pos)` logs both.
+macro_rules! log_vars {
+    ($($v:ident),+ $(,)?) => {
+        $(tracing::debug!("{} = {:?}", stringify!($v), $v);)+
+    };
+}
+pub(crate) use log_vars;
+
 pub use config::{DaemonArgs, DaemonConfig};
 pub use daemon::Daemon;
 

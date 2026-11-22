@@ -58,6 +58,7 @@ use crate::deezer::DeezerSearch;
 use crate::deferred_mixer::DeferredMixer;
 use crate::lastfm::LastfmManager;
 use crate::library::{Library, extract_metadata};
+use crate::log_vars;
 use crate::lyrics::{LyricsManager, lrc_to_text, meta_from_filename};
 use crate::network;
 use crate::podcast::PodcastManager;
@@ -290,6 +291,7 @@ impl Cmd {
         silent: bool,
         queue_index: Option<usize>,
     ) -> Result<DaemonRes, CoreError> {
+        log_vars!(path, start_pos, auto_advanced, silent, queue_index);
         // Bump first so any in-flight auto-advance/crossfade task sees a
         // session change and backs out before it touches state.
         inner.play_session.fetch_add(1, Ordering::Release);
@@ -638,6 +640,7 @@ impl Cmd {
         auto_advanced: bool,
         queue_index: Option<usize>,
     ) -> Result<DaemonRes, CoreError> {
+        log_vars!(uri_path, start_pos, auto_advanced, queue_index);
         inner.play_session.fetch_add(1, Ordering::Release);
         // The outgoing transport is stale while librespot connects and primes.
         let preparing = PreparingGuard::new(&inner.preparing);
@@ -697,6 +700,9 @@ impl Cmd {
         // it below; librespot's single-player design is why this path cannot
         // overlap two provider streams, but a local outgoing track is not
         // interrupted while the request is in flight.
+        // With a live session there is no connect ahead of the mixer's priming
+        // wait, so the muted start/pause dance below pays nothing back.
+        let trick = inner.stream.lock().await.session_is_valid();
         let source = {
             let mut stream = inner.stream.lock().await;
             match stream
@@ -726,7 +732,19 @@ impl Cmd {
             {
                 return Self::play_failed(inner, format!("spotify stream: {e}")).await;
             }
-            mixer.play()?;
+            if trick {
+                // Start the primed playback at 0 volume and pause it as soon
+                // as it begins, so nothing is heard. The user's next play
+                // press resumes through the normal pause/resume path into
+                // already-loaded audio.
+                let saved = mixer.volume();
+                mixer.set_volume(0)?;
+                mixer.play()?;
+                mixer.set_volume(saved)?;
+                mixer.pause()?;
+            } else {
+                mixer.play()?;
+            }
             mixer.duration()
         };
 
@@ -756,14 +774,28 @@ impl Cmd {
         state.duration = dur;
         drop(state);
         inner.scrobble.lock().await.start(&track.path, start_pos);
-        Daemon::push_started(
-            inner,
-            &track,
-            auto_advanced,
-            start_pos,
-            dur,
-            source_for_path(&track.path),
-        );
+        if trick {
+            // The muted start was paused as soon as playback began; the next
+            // press resumes through the normal pause/resume path.
+            let mut state = inner.state.write().await;
+            state.pause()?;
+            drop(state);
+            Daemon::push_event(
+                inner,
+                DaemonEvent::PlaybackPaused {
+                    time_pos: start_pos,
+                },
+            );
+        } else {
+            Daemon::push_started(
+                inner,
+                &track,
+                auto_advanced,
+                start_pos,
+                dur,
+                source_for_path(&track.path),
+            );
+        }
         drop(preparing);
         Self::announce_now_playing(inner).await;
         Ok(DaemonRes::Ok)
@@ -788,6 +820,7 @@ impl Cmd {
         let (url, live) = (resolved.url, resolved.live);
         let kind = parse_remote_path(path)
             .ok_or_else(|| CoreError::Daemon(format!("{path} is not a remote provider path")))?;
+        log_vars!(path, url, live, kind);
 
         // Fetch + probe the provider's stream off the async thread. Live radio
         // does not reconnect for seeks; podcast streams do. Reset any stale
@@ -1122,6 +1155,7 @@ impl Cmd {
             .current_track
             .as_ref()
             .is_some_and(|t| t.path.starts_with("spotify:"));
+        log_vars!(pos, streaming);
         if streaming {
             inner.stream.lock().await.pause();
         }
@@ -1258,7 +1292,7 @@ impl Cmd {
             return Ok(DaemonRes::Ok);
         };
         let pos = pos.clamp(0.0, duration.max(0.0));
-        tracing::debug!("cmd_seek: requested position={}", pos);
+        log_vars!(path, duration, pos);
         // Reloading a source while the old one is still audible has the same
         // stale-transport window as a track change: suppress the old source's
         // Finished/Error, and discard any automatic crossfade for a successor

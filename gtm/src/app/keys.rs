@@ -518,6 +518,9 @@ impl App {
                                     });
                                 }
                             }
+                            // A press during the connect — the first press is
+                            // already preparing the play.
+                            PlaybackStatus::Connecting => {}
                         }
                     }
                     Some(KeyboardAction::Next) => {

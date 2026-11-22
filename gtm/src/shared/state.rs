@@ -191,6 +191,9 @@ pub enum PlaybackStatus {
     Stopped,
     Playing,
     Paused,
+    /// The play press is being prepared on the daemon (Spotify connect);
+    /// the footer shows a spinner until the daemon answers.
+    Connecting,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

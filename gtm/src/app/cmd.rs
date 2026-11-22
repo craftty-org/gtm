@@ -1,4 +1,5 @@
 use crate::app::*;
+use crate::shared::state::PlaybackStatus;
 
 /// How long a manual Next/Prev holds the progress clock before the answer is
 /// assumed never to be coming.
@@ -24,6 +25,12 @@ impl App {
 
         match cmd {
             TuiCommand::Play { path, queue_index } => {
+                // A Spotify play goes through a daemon-side connect; the
+                // footer shows the "connecting" spinner from this press until
+                // the daemon's playback answer lands.
+                if path.starts_with("spotify:") {
+                    self.state.status = PlaybackStatus::Connecting;
+                }
                 tokio::spawn(async move {
                     if let Err(e) = client.play_at(&path, 0.0, queue_index).await {
                         error_handler(e);
