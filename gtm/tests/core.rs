@@ -4093,7 +4093,7 @@ fn narrow_docks_the_card_and_the_list_yields_its_rows() {
     // card was covering: scrollable to, unclickable.
     assert!(
         squish(lib).contains(&squish(
-            "let avail = right_inner.height.saturating_sub(2).saturating_sub(dock_h) as usize;"
+            "let avail = list_rect.height.saturating_sub(2).saturating_sub(dock_h) as usize;"
         )),
         "the mouse hit zones still cover rows under the docked card"
     );
@@ -5016,7 +5016,7 @@ fn the_grid_browses_covers_and_moves_by_cell() {
         "the results pane draws the grid but not from the mode's gate"
     );
     assert!(
-        block.contains("Render::evolving(f, right_inner, right_para, \"lib\", app, false);"),
+        block.contains("Render::evolving(f, list_rect, right_para, \"lib\", app, false);"),
         "the row list is drawn without an `else`, so both are on screen at once"
     );
     // Labels come from the same accessor the rows come from, so a cell cannot
