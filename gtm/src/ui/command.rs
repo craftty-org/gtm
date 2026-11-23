@@ -356,5 +356,5 @@ pub const COMMAND_GROUPS: &[(&str, usize)] = &[
     ("Playback", 14),
     ("Library & Queue", 26),
     ("View & Overlays", 15),
-    ("System", 7),
+    ("System", 8),
 ];

@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn row_counts_match_the_declared_lists() {
         assert_eq!(rows_for(0).len(), 8);
-        assert_eq!(rows_for(1).len(), 19);
+        assert_eq!(rows_for(1).len(), 20);
         // Status, Link Account, Unlink.
         assert_eq!(rows_for(2).len(), 3);
         for cat in 0..3 {
