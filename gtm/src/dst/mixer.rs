@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use rodio::Source;
 
-use crate::audio::backend::{AudioError, AudioEvent, AudioResult};
+use crate::audio::backend::{AudioEvent, AudioResult};
 use crate::audio::mixer::Mixer;
 use crate::audio::symphonia::StreamingReopen;
 use crate::shared::MAX_VOLUME;
@@ -69,7 +69,6 @@ impl SimMixer {
                 *self.duration.lock().unwrap() = standby_dur;
                 *pos = 0.0;
                 *self.standby_loaded.lock().unwrap() = false;
-                self.events.lock().unwrap().push(AudioEvent::TrackChanged);
             }
         }
         if dur > 0.0 && *pos >= dur && !*cf {
@@ -224,7 +223,6 @@ impl Mixer for SimMixer {
             *self.duration.lock().unwrap() = *self.standby_duration.lock().unwrap();
             *self.position.lock().unwrap() = 0.0;
             *self.standby_loaded.lock().unwrap() = false;
-            self.events.lock().unwrap().push(AudioEvent::TrackChanged);
         }
     }
     fn cancel_crossfade(&mut self) {
