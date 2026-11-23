@@ -1041,8 +1041,10 @@ impl App {
                         self.data_dirty = true;
                     }
                     IpcResult::PodcastEpisodes(feed_id, eps) => {
-                        let for_drilled = self.podcast.episodes_feed_id.as_deref() == Some(feed_id.as_str());
-                        let for_preview = self.podcast.preview_feed_id.as_deref() == Some(feed_id.as_str());
+                        let for_drilled =
+                            self.podcast.episodes_feed_id.as_deref() == Some(feed_id.as_str());
+                        let for_preview =
+                            self.podcast.preview_feed_id.as_deref() == Some(feed_id.as_str());
                         if !for_drilled && !for_preview {
                             continue;
                         }
@@ -1055,10 +1057,14 @@ impl App {
                                         if let Some((fid, idx_s)) = rest.rsplit_once('/') {
                                             if fid == feed_id {
                                                 if let Ok(idx) = idx_s.parse::<usize>() {
-                                                    if let Some(ep) = self.podcast.episodes.get(idx) {
-                                                        self.podcast.timestamps = ep.timestamps.clone();
-                                                        self.podcast.timestamps_title = ep.title.clone();
-                                                        self.pickers.open(PickerId::PodcastTimestamps);
+                                                    if let Some(ep) = self.podcast.episodes.get(idx)
+                                                    {
+                                                        self.podcast.timestamps =
+                                                            ep.timestamps.clone();
+                                                        self.podcast.timestamps_title =
+                                                            ep.title.clone();
+                                                        self.pickers
+                                                            .open(PickerId::PodcastTimestamps);
                                                     }
                                                 }
                                             }

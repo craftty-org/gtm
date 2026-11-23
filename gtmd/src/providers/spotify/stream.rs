@@ -22,8 +22,8 @@ use librespot_playback::player::{Player, PlayerEvent};
 use librespot_playback::{NUM_CHANNELS, SAMPLE_RATE};
 use tracing::{info, warn};
 
-use gtm::shared::ipc::DaemonEvent;
 use crate::log_vars;
+use gtm::shared::ipc::DaemonEvent;
 
 use super::LIBRESPOT_CLIENT_ID;
 

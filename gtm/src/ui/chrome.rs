@@ -1565,11 +1565,7 @@ impl Render {
         // Every category branch sizes its window the same way: the pane less the
         // leading blank and the stats row, less the docked card when it is on
         // screen. Not named for the library column's own `list_rows` above.
-        let window_rows = || {
-            results_area
-                .height
-                .saturating_sub(3 + dock_h + hero_h) as usize
-        };
+        let window_rows = || results_area.height.saturating_sub(3 + dock_h + hero_h) as usize;
 
         // The Spotify drill-down puts two fixed action rows above its tracks.
         // Record the window it actually drew so the mouse map is built from the
@@ -2472,7 +2468,9 @@ impl Render {
             if hero_rect.height > 0 {
                 if let Some(ref ht) = hero_track {
                     app.fetch_hero_cover(&ht.artist, &ht.title);
-                    let art_w = (hero_rect.height * 2).min(hero_rect.width.saturating_sub(24)).max(10);
+                    let art_w = (hero_rect.height * 2)
+                        .min(hero_rect.width.saturating_sub(24))
+                        .max(10);
                     let art_rect = Rect {
                         x: hero_rect.x + 1,
                         y: hero_rect.y,
@@ -2496,15 +2494,29 @@ impl Render {
                     )));
                     tlines.push(Line::from(Span::styled(
                         ht.title.clone(),
-                        Style::default().fg(app.theme.fg_bright).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(app.theme.fg_bright)
+                            .add_modifier(Modifier::BOLD),
                     )));
-                    let sub = if ht.artist.is_empty() { ht.album.clone() } else if ht.album.is_empty() { ht.artist.clone() } else { format!("{} · {}", ht.artist, ht.album) };
+                    let sub = if ht.artist.is_empty() {
+                        ht.album.clone()
+                    } else if ht.album.is_empty() {
+                        ht.artist.clone()
+                    } else {
+                        format!("{} · {}", ht.artist, ht.album)
+                    };
                     if !sub.is_empty() {
-                        tlines.push(Line::from(Span::styled(sub, Style::default().fg(app.theme.fg))));
+                        tlines.push(Line::from(Span::styled(
+                            sub,
+                            Style::default().fg(app.theme.fg),
+                        )));
                     }
                     let dur = format_duration_short(ht.duration as u64);
                     if !dur.is_empty() && dur != "0:00" {
-                        tlines.push(Line::from(Span::styled(dur, Style::default().fg(app.theme.fg_dim))));
+                        tlines.push(Line::from(Span::styled(
+                            dur,
+                            Style::default().fg(app.theme.fg_dim),
+                        )));
                     }
                     f.render_widget(
                         Paragraph::new(tlines),

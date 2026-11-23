@@ -316,12 +316,16 @@ fn looks_like_html(body: &str) -> bool {
 
 fn strip_html_blocks(body: &str) -> String {
     let mut s = body.to_string();
-    for tag in ["script", "style", "noscript", "svg", "header", "footer", "nav"] {
+    for tag in [
+        "script", "style", "noscript", "svg", "header", "footer", "nav",
+    ] {
         let open = format!("<{tag}");
         let close = format!("</{tag}>");
         loop {
             let lower = s.to_ascii_lowercase();
-            let Some(start) = lower.find(&open) else { break };
+            let Some(start) = lower.find(&open) else {
+                break;
+            };
             let Some(end_rel) = lower[start..].find(&close) else {
                 s.replace_range(start.., "");
                 break;
@@ -363,7 +367,11 @@ fn parse_plain_timed(body: &str) -> Vec<LrcLine> {
             let (speaker, text) = split_speaker_text(&rest);
             let full = join_speaker_text(speaker.or(pending_speaker.take()), &text);
             if !full.is_empty() {
-                out.push(LrcLine { timestamp: ts, text: full, words: Vec::new() });
+                out.push(LrcLine {
+                    timestamp: ts,
+                    text: full,
+                    words: Vec::new(),
+                });
                 pending_ts = None;
                 continue;
             }
@@ -378,7 +386,11 @@ fn parse_plain_timed(body: &str) -> Vec<LrcLine> {
             let speaker = speaker.or(pending_speaker.take());
             let full = join_speaker_text(speaker, &text);
             if !full.is_empty() {
-                out.push(LrcLine { timestamp: ts, text: full, words: Vec::new() });
+                out.push(LrcLine {
+                    timestamp: ts,
+                    text: full,
+                    words: Vec::new(),
+                });
             }
             continue;
         }
@@ -428,10 +440,7 @@ fn split_speaker_text(line: &str) -> (Option<String>, String) {
         && !trimmed.ends_with('?')
         && !trimmed.ends_with('!')
         && trimmed.split_whitespace().count() <= 6
-        && trimmed
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_uppercase())
+        && trimmed.chars().next().is_some_and(|c| c.is_uppercase())
     {
         // But avoid treating normal short sentences as speakers.
         let words = trimmed.split_whitespace().count();

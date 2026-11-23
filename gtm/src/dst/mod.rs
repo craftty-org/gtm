@@ -36,7 +36,10 @@ impl PartialEq for SimEvent {
 }
 impl Ord for SimEvent {
     fn cmp(&self, other: &Self) -> Ordering {
-        other.at.cmp(&self.at).then_with(|| other.seq.cmp(&self.seq))
+        other
+            .at
+            .cmp(&self.at)
+            .then_with(|| other.seq.cmp(&self.seq))
     }
 }
 impl PartialOrd for SimEvent {
@@ -65,7 +68,11 @@ impl SimRng {
         (self.next_u64() >> 11) as f64 / ((1u64 << 53) as f64)
     }
     pub fn gen_range(&mut self, upper: u64) -> u64 {
-        if upper == 0 { 0 } else { self.next_u64() % upper }
+        if upper == 0 {
+            0
+        } else {
+            self.next_u64() % upper
+        }
     }
     pub fn chance(&mut self, p: f64) -> bool {
         self.next_f64() < p

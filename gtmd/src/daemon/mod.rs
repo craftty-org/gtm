@@ -4882,7 +4882,12 @@ impl Daemon {
         let from_icy = state.radio_tracks.tracks.is_empty() && history_len > 1;
         let track = state.current_track.clone();
         drop(state);
-        Self::push_event(inner, DaemonEvent::RadioTitleChanged { title: title.clone() });
+        Self::push_event(
+            inner,
+            DaemonEvent::RadioTitleChanged {
+                title: title.clone(),
+            },
+        );
         // A new song on the same station: same path, new art. The track start
         // fired once, when the station did, so without this the per-song
         // palette would never be pushed at all.

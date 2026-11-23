@@ -180,7 +180,7 @@ impl Player {
         match state.status {
             PlaybackStatus::Playing => "Playing".into(),
             PlaybackStatus::Paused => "Paused".into(),
-            PlaybackStatus::Stopped => "Stopped".into(),
+            PlaybackStatus::Stopped | PlaybackStatus::Connecting => "Stopped".into(),
         }
     }
 

@@ -1,6 +1,6 @@
 use gtm::audio::{AudioEvent, Mixer};
-use gtm::dst::mixer::SimMixer;
 use gtm::dst::SimWorld;
+use gtm::dst::mixer::SimMixer;
 
 #[test]
 fn dst_playback_advances_deterministically() {

@@ -245,7 +245,8 @@ impl PodcastManager {
 
     pub fn set_progress(&mut self, feed_id: &str, episode_id: &str, pos: f64) {
         if pos <= 0.0 {
-            self.progress.remove(&Self::progress_key(feed_id, episode_id));
+            self.progress
+                .remove(&Self::progress_key(feed_id, episode_id));
         } else {
             self.progress
                 .insert(Self::progress_key(feed_id, episode_id), pos);
@@ -1483,7 +1484,11 @@ fn looks_audio(mime: &str) -> bool {
         || m.is_empty()
 }
 
-fn infer_transcripts(description: &str, episode_id: &str, feed_title: &str) -> Vec<PodcastTranscript> {
+fn infer_transcripts(
+    description: &str,
+    episode_id: &str,
+    feed_title: &str,
+) -> Vec<PodcastTranscript> {
     let mut out = Vec::new();
     // Lex Fridman publishes transcript pages linked in episode descriptions.
     if feed_title.to_ascii_lowercase().contains("lex fridman") {
@@ -1491,9 +1496,7 @@ fn infer_transcripts(description: &str, episode_id: &str, feed_title: &str) -> V
             let url = token
                 .trim_matches(|c: char| "\"'<>[](),;".contains(c))
                 .trim();
-            if url.starts_with("https://lexfridman.com/")
-                && url.contains("-transcript")
-            {
+            if url.starts_with("https://lexfridman.com/") && url.contains("-transcript") {
                 out.push(PodcastTranscript {
                     url: Some(url.to_string()),
                     text: None,
@@ -1558,7 +1561,9 @@ fn extract_timestamps(text: &str) -> Vec<PodcastTimestamp> {
             }
         }
         if let Some((secs, label)) = found
-            && !out.iter().any(|t: &PodcastTimestamp| t.secs == secs && t.label == label)
+            && !out
+                .iter()
+                .any(|t: &PodcastTimestamp| t.secs == secs && t.label == label)
         {
             out.push(PodcastTimestamp { secs, label });
         }

@@ -332,7 +332,11 @@ pub(crate) async fn save_progress(inner: &DaemonInner, path: &str, pos: f64) {
     if let Some(ep) = pm.episode_at(feed_id, idx) {
         let ep_id = ep.id.clone();
         let dur = ep.duration_secs.unwrap_or(0) as f64;
-        let save_pos = if dur > 30.0 && pos >= dur - 15.0 { 0.0 } else { pos.max(0.0) };
+        let save_pos = if dur > 30.0 && pos >= dur - 15.0 {
+            0.0
+        } else {
+            pos.max(0.0)
+        };
         pm.set_progress(feed_id, &ep_id, save_pos);
     }
 }

@@ -132,7 +132,9 @@ impl Mixer for SimMixer {
         self.load_active("", start_pos)
     }
 
-    fn dropped_samples(&self) -> u64 { 0 }
+    fn dropped_samples(&self) -> u64 {
+        0
+    }
 
     fn load_standby(&mut self, _path: &str) -> AudioResult<()> {
         *self.standby_loaded.lock().unwrap() = true;
@@ -155,10 +157,18 @@ impl Mixer for SimMixer {
         self.load_standby("")
     }
 
-    fn standby_is_loaded(&self) -> bool { *self.standby_loaded.lock().unwrap() }
+    fn standby_is_loaded(&self) -> bool {
+        *self.standby_loaded.lock().unwrap()
+    }
 
-    fn play(&mut self) -> AudioResult<()> { self.playing.store(true, Ordering::SeqCst); Ok(()) }
-    fn pause(&mut self) -> AudioResult<()> { self.playing.store(false, Ordering::SeqCst); Ok(()) }
+    fn play(&mut self) -> AudioResult<()> {
+        self.playing.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+    fn pause(&mut self) -> AudioResult<()> {
+        self.playing.store(false, Ordering::SeqCst);
+        Ok(())
+    }
     fn stop(&mut self) -> AudioResult<()> {
         self.playing.store(false, Ordering::SeqCst);
         *self.position.lock().unwrap() = 0.0;
@@ -170,14 +180,29 @@ impl Mixer for SimMixer {
     fn seek(&mut self, position_secs: f64) -> AudioResult<()> {
         let dur = *self.duration.lock().unwrap();
         let mut pos = self.position.lock().unwrap();
-        *pos = if dur > 0.0 { position_secs.clamp(0.0, dur) } else { position_secs.max(0.0) };
+        *pos = if dur > 0.0 {
+            position_secs.clamp(0.0, dur)
+        } else {
+            position_secs.max(0.0)
+        };
         Ok(())
     }
-    fn set_volume(&mut self, volume: u8) -> AudioResult<()> { self.volume.store(volume.min(MAX_VOLUME), Ordering::SeqCst); Ok(()) }
-    fn volume(&self) -> u8 { self.volume.load(Ordering::SeqCst) }
-    fn is_playing(&self) -> bool { self.playing.load(Ordering::SeqCst) }
-    fn current_position(&self) -> f64 { *self.position.lock().unwrap() }
-    fn duration(&self) -> f64 { *self.duration.lock().unwrap() }
+    fn set_volume(&mut self, volume: u8) -> AudioResult<()> {
+        self.volume.store(volume.min(MAX_VOLUME), Ordering::SeqCst);
+        Ok(())
+    }
+    fn volume(&self) -> u8 {
+        self.volume.load(Ordering::SeqCst)
+    }
+    fn is_playing(&self) -> bool {
+        self.playing.load(Ordering::SeqCst)
+    }
+    fn current_position(&self) -> f64 {
+        *self.position.lock().unwrap()
+    }
+    fn duration(&self) -> f64 {
+        *self.duration.lock().unwrap()
+    }
     fn active_remaining(&self) -> f64 {
         let d = *self.duration.lock().unwrap();
         let p = *self.position.lock().unwrap();
@@ -189,7 +214,9 @@ impl Mixer for SimMixer {
             *self.crossfade_remaining.lock().unwrap() = duration_secs.max(0.0);
         }
     }
-    fn is_crossfading(&self) -> bool { *self.crossfading.lock().unwrap() }
+    fn is_crossfading(&self) -> bool {
+        *self.crossfading.lock().unwrap()
+    }
     fn force_complete_crossfade(&mut self) {
         if *self.crossfading.lock().unwrap() {
             *self.crossfading.lock().unwrap() = false;
@@ -212,15 +239,29 @@ impl Mixer for SimMixer {
     }
     fn poll(&mut self) -> AudioResult<Option<AudioEvent>> {
         let mut ev = self.events.lock().unwrap();
-        if ev.is_empty() { Ok(None) } else { Ok(Some(ev.remove(0))) }
+        if ev.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(ev.remove(0)))
+        }
     }
-    fn current_peak_level(&self) -> f32 { 0.0 }
-    fn current_spectrum(&self) -> Vec<f32> { Vec::new() }
+    fn current_peak_level(&self) -> f32 {
+        0.0
+    }
+    fn current_spectrum(&self) -> Vec<f32> {
+        Vec::new()
+    }
     fn set_eq_preset(&self, _preset: &EqPreset) {}
     fn set_eq_enabled(&self, _enabled: bool) {}
     fn set_pre_gain(&self, _db: f32) {}
     fn set_reverb(&self, _config: &ReverbConfig) {}
-    fn set_mono(&self, enabled: bool) { self.mono.store(enabled, Ordering::SeqCst); }
-    fn mono(&self) -> bool { self.mono.load(Ordering::SeqCst) }
-    fn set_visualizer_enabled(&self, enabled: bool) { self.visualizer_enabled.store(enabled, Ordering::SeqCst); }
+    fn set_mono(&self, enabled: bool) {
+        self.mono.store(enabled, Ordering::SeqCst);
+    }
+    fn mono(&self) -> bool {
+        self.mono.load(Ordering::SeqCst)
+    }
+    fn set_visualizer_enabled(&self, enabled: bool) {
+        self.visualizer_enabled.store(enabled, Ordering::SeqCst);
+    }
 }
