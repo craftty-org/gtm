@@ -12,11 +12,21 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
 VERSION="$(grep -m1 '^version = ' Cargo.toml | sed 's/^version = "\(.*\)"/\1/')"
-gtm_req="$(sed -n 's/^gtm = { version = "\([^"]*\)".*/\1/p' gtmd/Cargo.toml)"
+gtm_reqs="$(sed -n 's/^gtm = { version = "\([^"]*\)".*/\1/p' gtmd/Cargo.toml)"
 
-if [ "${gtm_req}" != "${VERSION}" ]; then
-  echo "Error: gtmd/Cargo.toml depends on gtm ${gtm_req:-<path-only>}, but the workspace is ${VERSION}." >&2
-  echo "       Update the dependency before publishing, or crates.io gets a gtmd that will not build." >&2
+while IFS= read -r gtm_req; do
+  [ -z "$gtm_req" ] && continue
+  if [ "${gtm_req}" != "${VERSION}" ]; then
+    echo "Error: gtmd/Cargo.toml depends on gtm ${gtm_req:-<path-only>}, but the workspace is ${VERSION}." >&2
+    echo "       Update the dependency before publishing, or crates.io gets a gtmd that will not build." >&2
+    exit 1
+  fi
+done <<EOF
+$gtm_reqs
+EOF
+
+if [ -z "$gtm_reqs" ]; then
+  echo "Error: gtmd/Cargo.toml has no versioned gtm dependency." >&2
   exit 1
 fi
 
