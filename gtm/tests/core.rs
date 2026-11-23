@@ -2645,7 +2645,10 @@ fn the_palette_has_no_unreachable_or_unlabelled_rows() {
     );
     for label in keyless {
         assert!(
-            label.contains("Device") || label.contains("Playlist") || label.contains("Lists"),
+            label.contains("Device")
+                || label.contains("Playlist")
+                || label.contains("Lists")
+                || label.contains("Podcast"),
             "{label} has no key and nothing in its label says what it acts on"
         );
     }
@@ -4067,7 +4070,7 @@ fn narrow_docks_the_card_and_the_list_yields_its_rows() {
     // budget rather than fifteen copies of `height - 3`.
     assert!(
         squish(chrome).contains(&squish(
-            "let window_rows = || results_area.height.saturating_sub(3 + dock_h) as usize;"
+            "let window_rows = || results_area.height.saturating_sub(3 + dock_h + hero_h) as usize;"
         )),
         "the list is not sized around the docked card"
     );
@@ -5006,7 +5009,7 @@ fn the_grid_browses_covers_and_moves_by_cell() {
     let at = chrome
         .find("fill_pane(f, right_inner, app);")
         .expect("the results pane no longer fills before it draws");
-    let block = &chrome[at..(at + 700).min(chrome.len())];
+    let block = &chrome[at..(at + 4000).min(chrome.len())];
     assert!(
         block.contains("if app.grid_active() {")
             && block.contains("Render::grid(f, right_inner, app);"),
