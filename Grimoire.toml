@@ -29,3 +29,12 @@ description = "Render benchmark markdown from collected stats"
 silent = false
 language = "shell"
 run = "./scripts/bench/render.sh"
+
+
+[sigil.clean]
+description = "Clean up the build artifacts"
+silent = false
+language = "shell"
+run = "cargo clean"
+
+
