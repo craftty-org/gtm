@@ -22,6 +22,9 @@ mpris = ["dep:zbus", "dep:zvariant"]
 pulseaudio = ["dep:pulseaudio"]
 # Test/debug helper that forces IPC failures (tripwire).
 debug-fail = ["dep:rustc-hash"]
+# Exposes deterministic simulation test helpers to dependent crates' tests.
+# Not enabled by default; never included in release binaries.
+test-support = []
 
 [dependencies]
 # `unstable-rendered-line-info` gates `Paragraph::line_count`, which the lyrics
@@ -85,6 +88,7 @@ rustc-hash = { version = "2", optional = true }
 
 [dev-dependencies]
 bincode = "1"
+gtm = { path = ".", features = ["test-support"] }
 tokio = { version = "1", features = ["rt-multi-thread", "time", "macros"] }
 
 [package.metadata.deb]

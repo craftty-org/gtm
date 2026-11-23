@@ -162,9 +162,16 @@ async fn daemon_handle() -> (tokio::task::JoinHandle<()>, DaemonConfig) {
         daemon.run().await.ok();
     });
 
-    // Wait for daemon event loop to start
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    (handle, config)
+    // Deterministic-ish readiness: poll for socket instead of fixed sleep.
+    for _ in 0..200 {
+        if config.socket_path.exists() {
+            if tokio::net::UnixStream::connect(&config.socket_path).await.is_ok() {
+                return (handle, config);
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    panic!("daemon socket not ready: {:?}", config.socket_path);
 }
 
 async fn connect(socket_path: &PathBuf) -> (TestReader, tokio::net::unix::OwnedWriteHalf) {

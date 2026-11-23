@@ -139,10 +139,13 @@ See [the contributing guide](CONTRIBUTING.md) and
 
 **about** ![](screenshots/5.png)
 
-## Disclaimer
-
-This project does not endorse piracy of any kind. Please use subscription plans
-to support the work of artists and creators
+> [!warning]
+>
+> ## Disclaimer
+>
+> This project does not endorse piracy of any kind. Please use subscription
+> plans to support the work of artists and creators. All content streamed via
+> this client is owned and licensed by the respective providers.
 
 ## Acknowledgements
 

@@ -11,6 +11,8 @@
 // This is free software released under the GPL-3.0 license.
 
 pub mod audio;
+#[cfg(any(test, feature = "test-support"))]
+pub mod dst;
 #[cfg(feature = "mpris")]
 pub mod mpris;
 pub mod shared;

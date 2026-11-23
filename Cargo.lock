@@ -1957,6 +1957,7 @@ dependencies = [
  "fundsp",
  "futures",
  "getrandom 0.2.17",
+ "gtm",
  "hex",
  "image",
  "keyring",
