@@ -152,11 +152,13 @@ jobs:
             {"os":"ubuntu-22.04","platform":"x86_64-linux","container":"debian:12","family":"debian","link_override":"-C linker=gcc","mold_arg":"-C link-arg=-fuse-ld=mold"},
             {"os":"ubuntu-24.04-arm","platform":"aarch64-linux","container":"debian:12","family":"debian","link_override":"-C linker=gcc","mold_arg":"-C link-arg=-fuse-ld=mold"},
             {"os":"macos-latest","platform":"aarch64-darwin","container":null,"family":"macos","link_override":null,"mold_arg":null},
+            {"os":"macos-15-intel","platform":"x86_64-darwin","container":null,"family":"macos","link_override":null,"mold_arg":null},
             {"os":"ubuntu-latest","platform":"aarch64-android","container":null,"family":"android","link_override":null,"mold_arg":null},
             {"os":"ubuntu-22.04","platform":"x86_64-linux-arch","container":"archlinux:latest","family":"arch","link_override":"-C linker=gcc","mold_arg":"-C link-arg=-fuse-ld=mold"},
             {"os":"ubuntu-24.04-arm","platform":"aarch64-linux-arch","container":null,"family":"arch-arm","link_override":"-C linker=gcc","mold_arg":"-C link-arg=-fuse-ld=mold"},
             {"os":"ubuntu-22.04","platform":"x86_64-linux-musl","container":null,"family":"musl","link_override":"-C linker=gcc","mold_arg":"-C link-arg=-fuse-ld=mold"},
-            {"os":"ubuntu-24.04-arm","platform":"aarch64-linux-musl","container":null,"family":"musl","link_override":"-C linker=gcc","mold_arg":"-C link-arg=-fuse-ld=mold"}
+            {"os":"ubuntu-24.04-arm","platform":"aarch64-linux-musl","container":null,"family":"musl","link_override":"-C linker=gcc","mold_arg":"-C link-arg=-fuse-ld=mold"},
+            {"os":"windows-latest","platform":"x86_64-windows","container":null,"family":"windows","link_override":null,"mold_arg":null}
           ]'
           # Nightly targets. Debian 12 arm64 is the maintainer's test machine and
           # Termux is the phone. Add a platform here to build it on nightlies.
@@ -259,6 +261,11 @@ jobs:
         if: matrix.family == 'macos'
         run: brew install pkg-config pandoc
 
+      - name: Install system dependencies (Windows)
+        if: matrix.family == 'windows'
+        shell: bash
+        run: choco install pandoc -y
+
       - name: Install pandoc (Android build)
         if: matrix.family == 'android'
         run: sudo apt-get update && sudo apt-get install -y pandoc
@@ -327,8 +334,13 @@ jobs:
           cmake --build termux-elf-cleaner/build -j
 
       - name: Build release binaries
-        if: matrix.family != 'android' && matrix.family != 'musl' && matrix.family != 'arch-arm'
+        if: matrix.family != 'android' && matrix.family != 'musl' && matrix.family != 'arch-arm' && matrix.family != 'windows'
         run: cargo build --release -p gtm --features mpris && cargo build --release -p gtmd --features mpris,youtube
+
+      - name: Build release binaries (Windows)
+        if: matrix.family == 'windows'
+        shell: bash
+        run: cargo build --release -p gtm && cargo build --release -p gtmd
 
       - name: Assert glibc compatibility (<= 2.36)
         if: matrix.family == 'debian'
@@ -358,6 +370,7 @@ jobs:
 
       - name: Generate manpages (pandoc)
         if: matrix.family != 'musl' && matrix.family != 'arch-arm'
+        shell: bash
         run: ./scripts/build/manpages.sh artifacts
 
       - name: Install host build deps for completions
@@ -375,9 +388,15 @@ jobs:
         # build, and the ndk build only produces the libraries. Its archive
         # copies this directory, so skipping it left the copy with nothing.
         if: matrix.family != 'musl' && matrix.family != 'arch-arm'
+        shell: bash
         run: |
-          cargo build --release --quiet -p gtm --features mpris
-          cargo build --release --quiet -p gtmd --features mpris,youtube
+          if [[ "${{ matrix.family }}" == "windows" ]]; then
+            cargo build --release --quiet -p gtm
+            cargo build --release --quiet -p gtmd
+          else
+            cargo build --release --quiet -p gtm --features mpris
+            cargo build --release --quiet -p gtmd --features mpris,youtube
+          fi
           ./scripts/build/completions.sh "$(pwd)/artifacts"
 
       - name: Package complete archive (desktop)
@@ -441,6 +460,22 @@ jobs:
           cp artifacts/completions/* "$root/completions/"
           cp install.sh uninstall.sh              "$root/"
           tar czf "release-assets/gtm-aarch64-android.tar.gz" "$root"
+
+      - name: Package complete archive (Windows)
+        if: matrix.family == 'windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          platform="${{ matrix.platform }}"
+          root="gtm-${platform}"
+          mkdir -p release-assets "$root/bin" "$root/man/man1" "$root/completions"
+          cp target/release/gtm.exe  "$root/bin/"
+          cp target/release/gtmd.exe "$root/bin/"
+          cp artifacts/man/*.1       "$root/man/man1/" 2>/dev/null || true
+          cp artifacts/completions/* "$root/completions/" 2>/dev/null || true
+          cp LICENSE "$root/"
+          cp install.sh uninstall.sh "$root/" 2>/dev/null || true
+          (cd release-assets && 7z a "gtm-${platform}.zip" "../${root}" >/dev/null)
 
       - name: Build Debian/Ubuntu .deb
         if: matrix.family == 'debian'

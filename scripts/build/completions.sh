@@ -19,7 +19,10 @@ mkdir -p "$dest"
 
 for bin in gtm gtmd; do
   path="target/release/$bin"
-  if [[ ! -x "$path" ]]; then
+  if [[ "${OS:-}" == "Windows_NT" || "$(uname -s 2>/dev/null)" == MINGW* || "$(uname -s 2>/dev/null)" == MSYS* ]]; then
+    path="target/release/$bin.exe"
+  fi
+  if [[ ! -x "$path" && ! -f "$path" ]]; then
     echo "completions.sh: $path not built; run 'cargo build --release' first" >&2
     exit 1
   fi
