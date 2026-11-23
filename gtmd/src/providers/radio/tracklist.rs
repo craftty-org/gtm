@@ -47,6 +47,8 @@ struct Keys {
     artist: &'static str,
     title: &'static str,
     start: &'static str,
+    /// Optional end time field, same format as `start`. `""` when absent.
+    end: &'static str,
     /// Optional cover art field. `""` when the source publishes no art.
     art: &'static str,
     stamp: Stamp,
@@ -113,6 +115,7 @@ const LAUT_KEYS: Keys = Keys {
     artist: "artist.name",
     title: "title",
     start: "started_at",
+    end: "ends_at",
     art: "",
     stamp: Stamp::Offset,
 };
@@ -122,6 +125,7 @@ const SOMAFM_KEYS: Keys = Keys {
     artist: "artist",
     title: "title",
     start: "date",
+    end: "",
     art: "albumArt",
     stamp: Stamp::Epoch,
 };
@@ -131,6 +135,7 @@ const STREAMSB_KEYS: Keys = Keys {
     artist: "artist",
     title: "title",
     start: "time",
+    end: "",
     art: "",
     stamp: Stamp::Clock,
 };
@@ -142,6 +147,7 @@ const RADIOPARADISE_KEYS: Keys = Keys {
     artist: "artist",
     title: "title",
     start: "",
+    end: "",
     art: "cover",
     stamp: Stamp::Clock,
 };
@@ -427,6 +433,7 @@ fn build_at(body: &str, keys: &Keys, now: i64, depth: Depth) -> RadioTracklist {
                 title,
                 artist: text(dig(it, keys.artist)).unwrap_or_default(),
                 start: None,
+                duration: None,
                 art: text(dig(it, keys.art)),
             })
         })
@@ -441,6 +448,14 @@ fn build_at(body: &str, keys: &Keys, now: i64, depth: Depth) -> RadioTracklist {
         Stamp::Epoch | Stamp::Offset => {
             for (t, it) in tracks.iter_mut().zip(items) {
                 t.start = text(dig(it, keys.start)).and_then(|s| stamp(&s, keys.stamp, now));
+                if !keys.end.is_empty() {
+                    let end = text(dig(it, keys.end)).and_then(|s| stamp(&s, keys.stamp, now));
+                    if let (Some(s), Some(e)) = (t.start, end)
+                        && e > s
+                    {
+                        t.duration = Some((e - s) as u32);
+                    }
+                }
             }
         }
         Stamp::Clock => {
@@ -473,6 +488,20 @@ fn build_at(body: &str, keys: &Keys, now: i64, depth: Depth) -> RadioTracklist {
                 };
                 t.start = Some(prev);
                 prev_clock = Some(cur);
+            }
+        }
+    }
+    // Fill missing durations from adjacent start stamps. Newest-first: track i
+    // ended when track i-1 started, minus a brief inter-track ad gap.
+    const AD_GAP: i64 = 5;
+    for i in 1..tracks.len() {
+        if tracks[i].duration.is_some() {
+            continue;
+        }
+        if let (Some(newer), Some(start)) = (tracks[i - 1].start, tracks[i].start) {
+            let dur = newer - start - AD_GAP;
+            if dur > 0 {
+                tracks[i].duration = Some(dur as u32);
             }
         }
     }
@@ -701,6 +730,7 @@ mod tests {
             title: title.into(),
             artist: String::new(),
             start,
+            duration: None,
             art: None,
         }
     }

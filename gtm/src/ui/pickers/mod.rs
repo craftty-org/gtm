@@ -119,6 +119,17 @@ impl Pickers {
                     .clamp(52, 86);
                 (w, (app.podcast.episodes.len() as u16 + 6).clamp(18, 30))
             }
+            PickerId::PodcastTimestamps => {
+                let w = app
+                    .podcast
+                    .timestamps
+                    .iter()
+                    .map(|t| t.label.len() as u16 + 14)
+                    .max()
+                    .unwrap_or(52)
+                    .clamp(44, 84);
+                (w, (app.podcast.timestamps.len() as u16 + 6).clamp(12, 28))
+            }
             PickerId::PodcastSubscribe => (56, 8),
             PickerId::LoadStream => (56, 8),
             PickerId::SpotifyDest => {
@@ -172,6 +183,7 @@ impl Pickers {
                 | PickerId::SpotifySearch
                 | PickerId::PodcastFeeds
                 | PickerId::PodcastEpisodes
+                | PickerId::PodcastTimestamps
                 | PickerId::Radio
                 | PickerId::SpotifyDest
         );
@@ -224,6 +236,7 @@ impl Pickers {
             PickerId::PodcastFeeds => Self::render_podcast_feeds(f, picker_area, app),
             PickerId::PodcastEpisodes => Self::render_podcast_episodes(f, picker_area, app),
             PickerId::PodcastSubscribe => Self::render_podcast_subscribe(f, picker_area, app),
+            PickerId::PodcastTimestamps => Self::render_podcast_timestamps(f, picker_area, app),
             PickerId::LoadStream => Self::render_load_stream(f, picker_area, app),
             PickerId::Radio => Self::render_radio(f, picker_area, app),
             PickerId::Setup => Self::render_setup(f, picker_area, app),

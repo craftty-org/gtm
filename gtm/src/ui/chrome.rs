@@ -1556,10 +1556,20 @@ impl Render {
         } else {
             0
         };
+        let hero_track = app.recently_played_cache.first().cloned();
+        let hero_h: u16 = if hero_track.is_some() && !app.grid_active() && !lyrics_results_pane {
+            8.min(results_area.height.saturating_sub(10))
+        } else {
+            0
+        };
         // Every category branch sizes its window the same way: the pane less the
         // leading blank and the stats row, less the docked card when it is on
         // screen. Not named for the library column's own `list_rows` above.
-        let window_rows = || results_area.height.saturating_sub(3 + dock_h) as usize;
+        let window_rows = || {
+            results_area
+                .height
+                .saturating_sub(3 + dock_h + hero_h) as usize
+        };
 
         // The Spotify drill-down puts two fixed action rows above its tracks.
         // Record the window it actually drew so the mouse map is built from the
@@ -2417,9 +2427,6 @@ impl Render {
         }
 
         if !lyrics_results_pane {
-            let right_para = Paragraph::new(right_lines);
-            // The detail is the title for every category except Spotify, where
-            // it is a playlist id.
             let header_label = match (app.browse_detail.as_deref(), app.browse_title.as_deref()) {
                 (Some(_), Some(title)) => format!("▶ {title}"),
                 (Some(detail), None) => format!("▶ {detail}"),
@@ -2435,14 +2442,86 @@ impl Render {
                 true,
             );
             fill_pane(f, right_inner, app);
+            let (hero_rect, list_rect) = if hero_h > 0 && !app.grid_active() {
+                let h = hero_h.min(right_inner.height.saturating_sub(4));
+                (
+                    Rect {
+                        x: right_inner.x,
+                        y: right_inner.y,
+                        width: right_inner.width,
+                        height: h,
+                    },
+                    Rect {
+                        x: right_inner.x,
+                        y: right_inner.y + h,
+                        width: right_inner.width,
+                        height: right_inner.height.saturating_sub(h),
+                    },
+                )
+            } else {
+                (
+                    Rect {
+                        x: right_inner.x,
+                        y: right_inner.y,
+                        width: 0,
+                        height: 0,
+                    },
+                    right_inner,
+                )
+            };
+            if hero_rect.height > 0 {
+                if let Some(ref ht) = hero_track {
+                    app.fetch_hero_cover(&ht.artist, &ht.title);
+                    let art_w = (hero_rect.height * 2).min(hero_rect.width.saturating_sub(24)).max(10);
+                    let art_rect = Rect {
+                        x: hero_rect.x + 1,
+                        y: hero_rect.y,
+                        width: art_w,
+                        height: hero_rect.height.saturating_sub(1),
+                    };
+                    Render::cover(
+                        f,
+                        art_rect,
+                        app.hero_cover_stateful.as_mut(),
+                        app.hero_cover.as_deref(),
+                        app.theme.fg_dim,
+                        Some("\u{266b}"),
+                    );
+                    let tx = art_rect.x + art_rect.width + 2;
+                    let tw = hero_rect.width.saturating_sub(art_rect.width + 4);
+                    let mut tlines = Vec::new();
+                    tlines.push(Line::from(Span::styled(
+                        "Last played",
+                        Style::default().fg(app.theme.fg_dim),
+                    )));
+                    tlines.push(Line::from(Span::styled(
+                        ht.title.clone(),
+                        Style::default().fg(app.theme.fg_bright).add_modifier(Modifier::BOLD),
+                    )));
+                    let sub = if ht.artist.is_empty() { ht.album.clone() } else if ht.album.is_empty() { ht.artist.clone() } else { format!("{} · {}", ht.artist, ht.album) };
+                    if !sub.is_empty() {
+                        tlines.push(Line::from(Span::styled(sub, Style::default().fg(app.theme.fg))));
+                    }
+                    let dur = format_duration_short(ht.duration as u64);
+                    if !dur.is_empty() && dur != "0:00" {
+                        tlines.push(Line::from(Span::styled(dur, Style::default().fg(app.theme.fg_dim))));
+                    }
+                    f.render_widget(
+                        Paragraph::new(tlines),
+                        Rect {
+                            x: tx,
+                            y: hero_rect.y + 1,
+                            width: tw,
+                            height: hero_rect.height.saturating_sub(2),
+                        },
+                    );
+                }
+            }
             if app.grid_active() {
-                // The grid draws its own cells and registers its own hit zones,
-                // so the row list is neither drawn nor counted: `lib_total_rows`
-                // is left at zero above precisely so the row hit zones below are
-                // not registered over the top of them.
                 Render::grid(f, right_inner, app);
             } else {
-                Render::evolving(f, right_inner, right_para, "lib", app, false);
+                let right_para = Paragraph::new(right_lines);
+                Render::evolving(f, list_rect, right_para, "lib", app, false);
             }
 
             // Mouse hit zones for the visible library rows: rows start
@@ -2452,7 +2531,7 @@ impl Render {
             // The budget subtracts the docked card as well, so every hit zone
             // belongs to a row that is actually on screen.
             if lib_total_rows > 0 {
-                let avail = right_inner.height.saturating_sub(2).saturating_sub(dock_h) as usize;
+                let avail = list_rect.height.saturating_sub(2).saturating_sub(dock_h) as usize;
                 let rows = match spotify_list_rows {
                     Some(rows) => rows,
                     None => {
@@ -2463,11 +2542,11 @@ impl Render {
                         ListRows::new(0, app.list_scroll, visible_rows)
                     }
                 };
-                for (y, index) in rows.entries(right_inner.y + 1, avail) {
+                for (y, index) in rows.entries(list_rect.y + 1, avail) {
                     let rect = Rect {
-                        x: right_inner.x,
+                        x: list_rect.x,
                         y,
-                        width: right_inner.width,
+                        width: list_rect.width,
                         height: 1,
                     };
                     app.mouse_map.register(rect, MouseZone::ListItem(index));

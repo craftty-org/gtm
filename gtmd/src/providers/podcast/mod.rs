@@ -15,13 +15,14 @@ use quick_xml::events::Event;
 use tracing::{info, warn};
 
 use gtm::shared::podcast::{
-    PodcastEpisode, PodcastFeed, PodcastResult, PodcastStatus, PodcastTranscript,
+    PodcastEpisode, PodcastFeed, PodcastResult, PodcastStatus, PodcastTimestamp, PodcastTranscript,
 };
 use gtm::shared::track::LrcData;
 
 pub mod vtt;
 
 const CONFIG_FILE: &str = "podcast.json";
+const PROGRESS_FILE: &str = "podcast_progress.json";
 /// Marks that the current default-feed set has been offered to this config.
 ///
 /// Without it there is no way to tell a fresh install from a user who removed a
@@ -181,6 +182,7 @@ pub struct PodcastManager {
     /// Parsed transcripts keyed by `(feed_id, episode_index)`, so replaying an
     /// episode does not re-download its VTT. Dropped for a feed on refresh.
     transcripts: HashMap<(String, usize), LrcData>,
+    progress: HashMap<String, f64>,
     error: Option<String>,
     /// Directory results, most recent first, kept only to supply artwork to
     /// `add_feed`: the feeds themselves carry none often enough that
@@ -207,6 +209,7 @@ impl PodcastManager {
             feeds: Vec::new(),
             episodes: HashMap::new(),
             transcripts: HashMap::new(),
+            progress: HashMap::new(),
             error: None,
             discovery: Vec::new(),
             discovery_cache: HashMap::new(),
@@ -217,12 +220,57 @@ impl PodcastManager {
         self.config_dir.join(CONFIG_FILE)
     }
 
+    fn progress_path(&self) -> PathBuf {
+        self.config_dir.join(PROGRESS_FILE)
+    }
+
     fn defaults_marker_path(&self) -> PathBuf {
         self.config_dir.join(DEFAULTS_MARKER)
     }
 
     fn legacy_defaults_marker_path(&self) -> PathBuf {
         self.config_dir.join(DEFAULTS_MARKER_V1)
+    }
+
+    fn progress_key(feed_id: &str, episode_id: &str) -> String {
+        format!("{feed_id}\t{episode_id}")
+    }
+
+    pub fn progress_for(&self, feed_id: &str, episode_id: &str) -> Option<f64> {
+        self.progress
+            .get(&Self::progress_key(feed_id, episode_id))
+            .copied()
+            .filter(|p| *p > 0.0)
+    }
+
+    pub fn set_progress(&mut self, feed_id: &str, episode_id: &str, pos: f64) {
+        if pos <= 0.0 {
+            self.progress.remove(&Self::progress_key(feed_id, episode_id));
+        } else {
+            self.progress
+                .insert(Self::progress_key(feed_id, episode_id), pos);
+        }
+        let _ = self.save_progress();
+    }
+
+    fn load_progress(&mut self) {
+        let raw = match std::fs::read_to_string(self.progress_path()) {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+        if let Ok(map) = serde_json::from_str::<HashMap<String, f64>>(&raw) {
+            self.progress = map;
+        }
+    }
+
+    fn save_progress(&self) -> Result<(), String> {
+        let raw = serde_json::to_string_pretty(&self.progress).map_err(|e| e.to_string())?;
+        std::fs::write(self.progress_path(), raw).map_err(|e| format!("write: {e}"))?;
+        let _ = std::fs::set_permissions(
+            self.progress_path(),
+            std::fs::Permissions::from_mode(CONFIG_PERMS),
+        );
+        Ok(())
     }
 
     /// The default subscriptions, ready to persist.
@@ -271,6 +319,7 @@ impl PodcastManager {
                 self.seed_defaults();
             }
         }
+        self.load_progress();
     }
 
     fn seed_defaults(&mut self) {
@@ -282,6 +331,7 @@ impl PodcastManager {
             }
             Err(e) => warn!("could not write default podcast feeds: {e}"),
         }
+        self.load_progress();
     }
 
     /// Add the defaults an older config does not already have.
@@ -1262,23 +1312,31 @@ fn parse_feed(raw: &str, feed_url: &str) -> Result<ParsedFeed, String> {
     let art = image.clone();
     let episodes: Vec<PodcastEpisode> = episodes
         .into_iter()
-        .map(|e| PodcastEpisode {
-            feed_id: feed_id.clone(),
-            feed_title: title.clone(),
-            id: e.id,
-            title: e.title,
-            url: e.url,
-            duration_secs: e.duration_secs,
-            published: e.published,
-            description: if e.description.is_empty() {
+        .map(|e| {
+            let description = if e.description.is_empty() {
                 None
             } else {
-                Some(e.description)
-            },
-            // An episode that carries its own art keeps it; most do not, and
-            // the channel's is a better answer than none.
-            image_url: e.image.or_else(|| art.clone()),
-            transcripts: e.transcripts,
+                Some(e.description.clone())
+            };
+            let transcripts = if e.transcripts.is_empty() {
+                infer_transcripts(&e.description, &e.id, &title)
+            } else {
+                e.transcripts
+            };
+            let timestamps = extract_timestamps(&e.description);
+            PodcastEpisode {
+                feed_id: feed_id.clone(),
+                feed_title: title.clone(),
+                id: e.id,
+                title: e.title,
+                url: e.url,
+                duration_secs: e.duration_secs,
+                published: e.published,
+                description,
+                image_url: e.image.or_else(|| art.clone()),
+                transcripts,
+                timestamps,
+            }
         })
         .collect();
     Ok(ParsedFeed {
@@ -1423,6 +1481,100 @@ fn looks_audio(mime: &str) -> bool {
         || m.contains("mpeg")
         || m.contains("ogg")
         || m.is_empty()
+}
+
+fn infer_transcripts(description: &str, episode_id: &str, feed_title: &str) -> Vec<PodcastTranscript> {
+    let mut out = Vec::new();
+    // Lex Fridman publishes transcript pages linked in episode descriptions.
+    if feed_title.to_ascii_lowercase().contains("lex fridman") {
+        for token in description.split_whitespace() {
+            let url = token
+                .trim_matches(|c: char| "\"'<>[](),;".contains(c))
+                .trim();
+            if url.starts_with("https://lexfridman.com/")
+                && url.contains("-transcript")
+            {
+                out.push(PodcastTranscript {
+                    url: Some(url.to_string()),
+                    text: None,
+                    kind: Some("text/html".into()),
+                    rel: Some("transcript".into()),
+                });
+                break;
+            }
+        }
+        // Fallback: derive from episode link/id pattern.
+        if out.is_empty() {
+            let base = episode_id
+                .split('?')
+                .next()
+                .unwrap_or(episode_id)
+                .trim_end_matches('/');
+            if let Some(slug) = base.strip_prefix("https://lexfridman.com/") {
+                let slug = slug.trim_end_matches('/');
+                if !slug.is_empty() && !slug.contains('/') {
+                    out.push(PodcastTranscript {
+                        url: Some(format!("https://lexfridman.com/{slug}-transcript")),
+                        text: None,
+                        kind: Some("text/html".into()),
+                        rel: Some("transcript".into()),
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
+fn extract_timestamps(text: &str) -> Vec<PodcastTimestamp> {
+    let mut out = Vec::new();
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let mut found: Option<(u64, String)> = None;
+        for token in line.split_whitespace() {
+            let t = token
+                .trim_matches(|c: char| {
+                    matches!(c, '(' | ')' | '[' | ']' | '-' | '–' | '—' | '*' | '.')
+                })
+                .trim();
+            if let Some(secs) = parse_ts_token(t) {
+                let label = line
+                    .replace(token, " ")
+                    .replace(t, " ")
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let label = label
+                    .trim_matches(|c: char| matches!(c, '-' | '–' | '—' | ':' | '|'))
+                    .trim()
+                    .to_string();
+                if !label.is_empty() {
+                    found = Some((secs, label));
+                    break;
+                }
+            }
+        }
+        if let Some((secs, label)) = found
+            && !out.iter().any(|t: &PodcastTimestamp| t.secs == secs && t.label == label)
+        {
+            out.push(PodcastTimestamp { secs, label });
+        }
+    }
+    out
+}
+
+fn parse_ts_token(t: &str) -> Option<u64> {
+    let parts: Vec<&str> = t.split(':').collect();
+    let nums: Option<Vec<u64>> = parts.iter().map(|p| p.parse::<u64>().ok()).collect();
+    let nums = nums?;
+    match nums.as_slice() {
+        [m, s] if *s < 60 => Some(m * 60 + s),
+        [h, m, s] if *m < 60 && *s < 60 => Some(h * 3600 + m * 60 + s),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -1811,6 +1963,7 @@ Hello]]></podcast:transcript>
                         rel: None,
                     },
                 ],
+                timestamps: Vec::new(),
             }],
         );
 

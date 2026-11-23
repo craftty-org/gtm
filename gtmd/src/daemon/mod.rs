@@ -808,7 +808,7 @@ impl Cmd {
     async fn play_remote(
         inner: &DaemonInner,
         path: &str,
-        start_pos: f64,
+        mut start_pos: f64,
         auto_advanced: bool,
         queue_index: Option<usize>,
     ) -> Result<DaemonRes, CoreError> {
@@ -821,6 +821,19 @@ impl Cmd {
         let kind = parse_remote_path(path)
             .ok_or_else(|| CoreError::Daemon(format!("{path} is not a remote provider path")))?;
         log_vars!(path, url, live, kind);
+        if start_pos <= 0.0
+            && let RemoteKind::Podcast {
+                feed_id,
+                episode_index,
+            } = &kind
+        {
+            let pm = inner.podcast.lock().await;
+            if let Some(ep) = pm.episode_at(feed_id, *episode_index)
+                && let Some(p) = pm.progress_for(feed_id, &ep.id)
+            {
+                start_pos = p;
+            }
+        }
 
         // Fetch + probe the provider's stream off the async thread. Live radio
         // does not reconnect for seeks; podcast streams do. Reset any stale
@@ -1159,11 +1172,16 @@ impl Cmd {
         if streaming {
             inner.stream.lock().await.pause();
         }
-        let mut state = inner.state.write().await;
-        state.pause()?;
-        state.time_pos = pos;
-        let time_pos = state.time_pos;
-        drop(state);
+        let (path, time_pos) = {
+            let mut state = inner.state.write().await;
+            state.pause()?;
+            state.time_pos = pos;
+            let path = state.current_track.as_ref().map(|t| t.path.clone());
+            (path, state.time_pos)
+        };
+        if let Some(path) = path {
+            podcast::save_progress(inner, &path, time_pos).await;
+        }
         Daemon::push_event(inner, DaemonEvent::PlaybackPaused { time_pos });
         Ok(DaemonRes::Ok)
     }
@@ -1188,6 +1206,7 @@ impl Cmd {
             (state.current_track.clone(), state.time_pos.max(0.0))
         };
         if let Some(track) = track {
+            podcast::save_progress(inner, &track.path, played_secs).await;
             Cmd::scrobble_track(inner, &track, played_secs).await;
         }
 
@@ -1204,6 +1223,16 @@ impl Cmd {
     }
 
     pub async fn next(inner: &DaemonInner) -> Result<DaemonRes, CoreError> {
+        let (cur_path, cur_pos) = {
+            let st = inner.state.read().await;
+            (
+                st.current_track.as_ref().map(|t| t.path.clone()),
+                st.time_pos.max(0.0),
+            )
+        };
+        if let Some(p) = cur_path {
+            podcast::save_progress(inner, &p, cur_pos).await;
+        }
         if let Some(path) = Daemon::promote_crossfade(inner).await {
             let _ = Daemon::step_next(inner).await;
             Daemon::report_promoted(inner, &path).await;
@@ -1244,6 +1273,16 @@ impl Cmd {
         let pos = inner.mixer.lock().await.current_position();
         if pos > RESTART_THRESHOLD_SECS {
             return Cmd::seek(inner, 0.0).await;
+        }
+        let (cur_path, cur_pos) = {
+            let st = inner.state.read().await;
+            (
+                st.current_track.as_ref().map(|t| t.path.clone()),
+                st.time_pos.max(0.0),
+            )
+        };
+        if let Some(p) = cur_path {
+            podcast::save_progress(inner, &p, cur_pos).await;
         }
         let has_current = inner.state.read().await.current_track.is_some();
 
@@ -1343,9 +1382,16 @@ impl Cmd {
                 if was_paused {
                     inner.stream.lock().await.pause();
                 }
-                let mut state = inner.state.write().await;
-                state.seek(pos)?;
-                drop(state);
+                let path = {
+                    let mut state = inner.state.write().await;
+                    state.seek(pos)?;
+                    let path = state.current_track.as_ref().map(|t| t.path.clone());
+                    drop(state);
+                    path
+                };
+                if let Some(path) = path {
+                    podcast::save_progress(inner, &path, pos).await;
+                }
                 Daemon::push_event(inner, DaemonEvent::PositionChanged { time_pos: pos });
                 return Ok(DaemonRes::Ok);
             }
@@ -1386,9 +1432,16 @@ impl Cmd {
                 mixer.pause()?;
             }
         }
-        let mut state = inner.state.write().await;
-        state.seek(pos)?;
-        drop(state);
+        let path = {
+            let mut state = inner.state.write().await;
+            state.seek(pos)?;
+            let path = state.current_track.as_ref().map(|t| t.path.clone());
+            drop(state);
+            path
+        };
+        if let Some(path) = path {
+            podcast::save_progress(inner, &path, pos).await;
+        }
         Daemon::push_event(inner, DaemonEvent::PositionChanged { time_pos: pos });
         Ok(DaemonRes::Ok)
     }
@@ -1689,8 +1742,10 @@ impl Cmd {
 
     pub async fn clear_cache(inner: &DaemonInner, what: CacheKind) -> Result<DaemonRes, CoreError> {
         let cache_dir = inner.config.cache_dir.clone();
-        tokio::task::spawn_blocking(move || match what {
-            CacheKind::Lyrics => {
+        let data_dir = inner.config.data_dir.clone();
+        let what_copy = what;
+        tokio::task::spawn_blocking(move || {
+            let clear_lyrics = |cache_dir: &std::path::Path| {
                 let dir = cache_dir.join("lyrics");
                 if let Ok(entries) = std::fs::read_dir(&dir) {
                     for entry in entries.flatten() {
@@ -1699,8 +1754,8 @@ impl Cmd {
                         }
                     }
                 }
-            }
-            CacheKind::Covers => {
+            };
+            let clear_covers = |cache_dir: &std::path::Path| {
                 for sub in ["covers", "artist_covers"] {
                     let dir = cache_dir.join(sub);
                     if let Ok(entries) = std::fs::read_dir(&dir) {
@@ -1709,13 +1764,32 @@ impl Cmd {
                         }
                     }
                 }
+            };
+            match what_copy {
+                CacheKind::Lyrics => clear_lyrics(&cache_dir),
+                CacheKind::Covers => clear_covers(&cache_dir),
+                CacheKind::All => {
+                    clear_lyrics(&cache_dir);
+                    clear_covers(&cache_dir);
+                    if let Ok(entries) = std::fs::read_dir(&cache_dir) {
+                        for entry in entries.flatten() {
+                            let p = entry.path();
+                            if p.is_dir() {
+                                let _ = std::fs::remove_dir_all(&p);
+                            } else {
+                                let _ = std::fs::remove_file(&p);
+                            }
+                        }
+                    }
+                    for name in ["library.db", "library.db-wal", "library.db-shm"] {
+                        let _ = std::fs::remove_file(data_dir.join(name));
+                    }
+                }
             }
         })
         .await
         .map_err(|e| CoreError::Daemon(format!("clear cache task: {e}")))?;
-        if what == CacheKind::Covers {
-            // Drop the in-memory LRU too, otherwise the UI reports a cleared
-            // cache while the daemon keeps serving the old images from RAM.
+        if matches!(what, CacheKind::Covers | CacheKind::All) {
             let cache = inner.cover_cache().await;
             if let Some(cc) = cache.as_ref() {
                 cc.clear_mem().await;
@@ -4808,12 +4882,38 @@ impl Daemon {
         let from_icy = state.radio_tracks.tracks.is_empty() && history_len > 1;
         let track = state.current_track.clone();
         drop(state);
-        Self::push_event(inner, DaemonEvent::RadioTitleChanged { title });
+        Self::push_event(inner, DaemonEvent::RadioTitleChanged { title: title.clone() });
         // A new song on the same station: same path, new art. The track start
         // fired once, when the station did, so without this the per-song
         // palette would never be pushed at all.
         if has_title && let Some(track) = track {
             Self::push_art(inner, &track);
+        }
+        if has_title && !from_icy {
+            let mut state = inner.state.write().await;
+            if !state.radio_tracks.tracks.is_empty()
+                && let Some(ref t) = title
+            {
+                let at = state.radio_tracks.match_title(t);
+                if at != state.radio_tracks.at {
+                    state.radio_tracks.at = at;
+                    let artist = state
+                        .radio_tracks
+                        .tracks
+                        .get(at)
+                        .and_then(|tr| (!tr.artist.is_empty()).then(|| tr.artist.clone()));
+                    state.radio_artist = artist.clone();
+                    let list = state.radio_tracks.clone();
+                    drop(state);
+                    Self::push_event(
+                        inner,
+                        DaemonEvent::RadioTracksChanged {
+                            list: Box::new(list),
+                            artist,
+                        },
+                    );
+                }
+            }
         }
         if from_icy {
             Self::publish_icy_history(inner, titles).await;
@@ -4843,6 +4943,7 @@ impl Daemon {
                 title,
                 artist: String::new(),
                 start: None,
+                duration: None,
                 art: None,
             })
             .collect();
@@ -5093,7 +5194,7 @@ impl Daemon {
             return;
         }
         let Some(station) = station else { return };
-        let list = tracklist::load(inner, &station).await;
+        let mut list = tracklist::load(inner, &station).await;
         if list.tracks.is_empty() {
             return;
         }
@@ -5108,8 +5209,9 @@ impl Daemon {
             return;
         }
         let mut state = inner.state.write().await;
+        let (_, artist, at) = tracklist::now_split(&list, state.radio_title.as_deref());
+        list.at = at;
         state.radio_tracks = list.clone();
-        let (_, artist) = tracklist::now_split(&list, state.radio_title.as_deref());
         state.radio_artist = artist.clone();
         drop(state);
         Self::push_event(
@@ -5297,6 +5399,18 @@ impl Daemon {
                         Self::retry_live_stream(&inner, &path, session).await;
                     });
                     return;
+                }
+                {
+                    let (path, dur) = {
+                        let st = inner.state.read().await;
+                        (
+                            st.current_track.as_ref().map(|t| t.path.clone()),
+                            st.duration,
+                        )
+                    };
+                    if let Some(path) = path {
+                        podcast::save_progress(inner, &path, dur).await;
+                    }
                 }
                 // Deferred sleep timer: the current finite track just ended
                 // naturally, so stop instead of advancing to the next track.

@@ -165,6 +165,9 @@ pub struct Prefs {
     /// client connecting, which is not something anyone asked for.
     #[serde(default)]
     pub(crate) resume_on_start: bool,
+    /// Show a notification when a newer GitHub release is available.
+    #[serde(default = "default_true")]
+    pub(crate) notify_new_release: bool,
 }
 
 pub(crate) fn default_true() -> bool {
@@ -306,6 +309,7 @@ impl Default for Prefs {
             show_preview: true,
             preview_delay_secs: default_preview_delay_secs(),
             show_welcome: true,
+            notify_new_release: true,
             resume_on_start: false,
         }
     }

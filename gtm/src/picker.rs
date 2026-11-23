@@ -42,6 +42,8 @@ pub enum PickerId {
     PodcastEpisodes,
     /// Podcast feed subscribe form (URL input).
     PodcastSubscribe,
+    /// Timestamp/chapter jump picker for the current podcast episode.
+    PodcastTimestamps,
     /// Unified Radio picker (Alt+R): saved stations, Radio Browser top
     /// stations, cliamp channels, tags/countries drill-down, and a search box
     /// filtered by field.

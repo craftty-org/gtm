@@ -665,8 +665,13 @@ impl AudioMixer {
         Self::stop_decode_thread(&self.active_control, &mut self.active_decode_handle);
 
         let vol = volume_ratio(self.volume.load(Ordering::SeqCst));
-        self.active().stop();
-        self.active().set_volume(vol);
+        let np = Player::connect_new(self._keepalive_sink.0.mixer());
+        np.set_volume(vol);
+        if self.is_a_active {
+            self.player_a = np;
+        } else {
+            self.player_b = np;
+        }
 
         if dur > 0.0 {
             *self.duration.lock().unwrap() = dur;
@@ -812,11 +817,14 @@ impl AudioMixer {
         Self::stop_decode_thread(&self.active_control, &mut self.active_decode_handle);
 
         let vol = volume_ratio(self.volume.load(Ordering::SeqCst));
-        self.active().stop();
-        self.active().set_volume(vol);
+        let np = Player::connect_new(self._keepalive_sink.0.mixer());
+        np.set_volume(vol);
+        if self.is_a_active {
+            self.player_a = np;
+        } else {
+            self.player_b = np;
+        }
 
-        // Live streams have no meaningful total duration; zero both so the
-        // Finished stall-guard is permanently disabled for this source.
         *self.duration.lock().unwrap() = 0.0;
 
         self.active().append(self.apply_mono(Box::new(source)));
@@ -882,8 +890,13 @@ impl AudioMixer {
         Self::stop_decode_thread(&self.active_control, &mut self.active_decode_handle);
 
         let vol = volume_ratio(self.volume.load(Ordering::SeqCst));
-        self.active().stop();
-        self.active().set_volume(vol);
+        let np = Player::connect_new(self._keepalive_sink.0.mixer());
+        np.set_volume(vol);
+        if self.is_a_active {
+            self.player_a = np;
+        } else {
+            self.player_b = np;
+        }
 
         if duration_secs > 0.0 {
             *self.duration.lock().unwrap() = duration_secs;
@@ -891,8 +904,6 @@ impl AudioMixer {
             *self.duration.lock().unwrap() = 0.0;
         }
 
-        // No `wrap_source` here: EQ and reverb both run inside the decode
-        // thread now, so wrapping again would apply them twice.
         self.active().append(self.apply_mono(Box::new(ring)));
 
         self.active_control = Some(control);
@@ -989,8 +1000,14 @@ impl AudioMixer {
     pub fn load_standby(&mut self, path: &str) -> AudioResult<()> {
         Self::stop_decode_thread(&self.standby_control, &mut self.standby_decode_handle);
 
-        self.standby().stop();
-        self.standby().set_volume(0.0);
+        let np = Player::connect_new(self._keepalive_sink.0.mixer());
+        np.set_volume(0.0);
+        np.pause();
+        if self.is_a_active {
+            self.player_b = np;
+        } else {
+            self.player_a = np;
+        }
         self.standby_duration = Self::probe_duration(path).unwrap_or(0.0);
 
         let (control, source, handle) = Self::start_decode_thread(
@@ -1021,8 +1038,14 @@ impl AudioMixer {
     ) -> AudioResult<()> {
         Self::stop_decode_thread(&self.standby_control, &mut self.standby_decode_handle);
 
-        self.standby().stop();
-        self.standby().set_volume(0.0);
+        let np = Player::connect_new(self._keepalive_sink.0.mixer());
+        np.set_volume(0.0);
+        np.pause();
+        if self.is_a_active {
+            self.player_b = np;
+        } else {
+            self.player_a = np;
+        }
         self.standby_duration = 0.0;
 
         let (control, source, handle) = Self::start_decode_reader(
@@ -1052,8 +1075,14 @@ impl AudioMixer {
     ) -> AudioResult<()> {
         Self::stop_decode_thread(&self.standby_control, &mut self.standby_decode_handle);
 
-        self.standby().stop();
-        self.standby().set_volume(0.0);
+        let np = Player::connect_new(self._keepalive_sink.0.mixer());
+        np.set_volume(0.0);
+        np.pause();
+        if self.is_a_active {
+            self.player_b = np;
+        } else {
+            self.player_a = np;
+        }
         self.standby_duration = source
             .total_duration()
             .map(|d| d.as_secs_f64())

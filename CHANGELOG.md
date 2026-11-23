@@ -2,7 +2,7 @@
 
 ## [0.2.97] - 2026-11-08
 
-### Added
+### ✨ Added
 - **Context-aware equalizer (`context_aware_eq` config option, off by
   default).** On a track change the equalizer switches to the preset the
   track's genre names (`rock` → Rock, `hip-hop` → Hip-Hop, …), and a podcast
@@ -10,7 +10,7 @@
   with no preset and a user's `Custom` curve are left untouched; source
   wins over genre.
 
-### Fixed
+### 🐛 Fixed
 - **Infinite refresh in the content pane and cover widgets.** The
   now-playing cover fetch is latched per path (hit or miss) instead of
   restaging every frame, cover cache hits only mark dirty on a real change,
@@ -19,7 +19,7 @@
 
 ## [0.2.98] - 2026-11-20
 
-### Added
+### ✨ Added
 - **`gtm playlist`** — create, rename, add to, remove from, delete, follow,
   copy and list the playlists behind a provider. These go through the daemon's
   playlist registry rather than one service's API, so `playlist sources` says
@@ -30,7 +30,7 @@
   picker steps through them.
 - **`gtm volume` with no argument** prints the current volume.
 
-### Removed
+### 🗑️ Removed
 - **IPC commands with no caller**: `set_dynamic_mode`, `set_scrobble`,
   `set_cover_cache`, `lastfm_authenticate`, `yt_search_cancel`,
   `yt_resolve_stream`, `yt_fetch_playlist` and `yt_playlist_poll`, plus the
@@ -45,13 +45,13 @@
   prints the unknown-action warning and is dropped. The reference lives at
   <https://gtmd.dev/docs/keybindings>.
 
-### Changed
+### ♻️ Changed
 - **`YtSetConfig` now fails on a build without the `youtube` feature** instead
   of answering as if it had stored the config.
 
 ## [0.2.96] - 2026-10-25
 
-### Fixed
+### 🐛 Fixed
 - **Chart and Library covers stayed blank.** The daemon answered
   `get_image_cover`, but the client decoded that reply as an untyped value, so
   the image never reached the sleeve. The response now goes through the same
@@ -71,7 +71,7 @@
 
 ## [0.2.95] - 2026-10-21
 
-### Fixed
+### 🐛 Fixed
 - **The progress bar ignored its width.** The padded styles drew two cushion
   cells on top of the requested width and `Classic` fell two cells short of
   it, so at narrow widths the bar crowded the times beside it and `Classic`
@@ -105,7 +105,7 @@
   playing, and the Zen visualizer says "It's awfully quiet here…" instead of
   painting background when it has nothing to draw.
 
-### Changed
+### ♻️ Changed
 - **Diagnostic roles take no tint at all.** The reactive theme's semantic
   colours (error, warning, info, hint, success) were nudged toward the
   artwork's dominant hue, which is exactly the movement a diagnostic cannot
@@ -118,7 +118,7 @@
   window say "Press s to star" with the GitHub mark riding beside the
   sentence it is the logo for.
 
-### Removed
+### 🗑️ Removed
 - **`cover_cache_mb` from the client's copy of the config.** It was carried
   through `Prefs` into `App` and never read; the daemon reads its own copy from
   `config.toml` directly, which is unchanged.
@@ -127,7 +127,7 @@
 
 ## [0.2.94] - 2026-10-18
 
-### Added
+### ✨ Added
 - **Playback source on the wire.** `playback_started` carries a trailing
   `source`, and the status snapshot carries one beside `current_track`, so a
   client priming on connect has it before the first event. Five lowercase
@@ -146,7 +146,7 @@
   the #1 track without loading the tracklist.
 - **Radio Paradise** on air via the depth-3 endpoint.
 
-### Changed
+### ♻️ Changed
 - **Equal-power crossfade.** `cos`/`sin` instead of `1-t`/`t`. Linear held the
   sum of amplitudes at 1 while the power summed to 0.5, which is the 3dB dip in
   the middle. Costs a ~1.5dB rise through the fade.
@@ -154,7 +154,7 @@
 - **Restoring a saved track no longer implies playing it.** `resume_on_start`
   decides.
 
-### Fixed
+### 🐛 Fixed
 - **A crossfade into a live stream kept the previous file's duration**, so the
   stream reported position 0 against the last song's length — a full progress
   bar re-filling on a track with no end to reach.
@@ -167,7 +167,7 @@
 - **Dance Wave** rejected its placeholder response, which parsed as a valid
   one-row tracklist.
 
-### Removed
+### 🗑️ Removed
 - **The progress bar from the footer.** The segment is a string, and the bar is
   drawn per cell rather than as text, so there is no way to format it into that
   string. The times alone still say how far through the track you are, and the
@@ -182,18 +182,18 @@
 
 ## [0.2.6] - 2026-08-27
 
-### Added
+### ✨ Added
 
-### Changed
+### ♻️ Changed
 
-### Fixed
+### 🐛 Fixed
 - crates.io publish now runs as part of the release pipeline, only after every build target succeeds.
 
-### Removed
+### 🗑️ Removed
 
 ## [0.1.6] – 2026-08-12
 
-### Added
+### ✨ Added
 - **Preset keybindings**: `Alt+T` cycles themes, `Alt+X` toggles crossfade, `Alt+P` cycles progress style (replaces plain `P`)
 - **Theme accents**: `secondary_accent` and `tertiary_accent` fields on `AppTheme` with values for all 12 built-in themes
 - **Theme picker swatches**: color blocks in the theme picker showing each theme's accent color
@@ -204,27 +204,27 @@
 - **Version handling**: `--version`/`-V` prints version only; `-vv` includes copyright notice
 - **gtm crate README**: added per-crate README for the TUI/CLI frontend
 
-### Fixed
+### 🐛 Fixed
 - **Crossfade prev/next with >2 tracks**: clear crossfade state before starting a new crossfade in `cmd_next`
 
-### Changed
+### ♻️ Changed
 - Footer module colors now use theme `secondary_accent`/`tertiary_accent` per section
 - Command palette has 45+ entries covering all TUI actions
 - All 12 iteration specs verified and marked complete
 
 ## [0.1.5] – 2026-08-11
 
-### Added
+### ✨ Added
 - **crates.io publishing**: workspace crates (`gtm-core`, `gtm-audio`, `gtm-mpris`, `gtmd`, `gtm`) are now published to crates.io by the release workflow (stable releases only, dependency order, idempotent re-runs via the `GTM_IO` token). Added missing `description` fields, explicit versions on path dependencies, and marked `release-gen` as `publish = false`
 - **More distro packages**: release workflow now publishes `.rpm` (Fedora/RHEL/CentOS, x86_64 + aarch64, binary packaging via `dist/gtm-full.spec`), Arch `.pkg.tar.zst` (`scripts/arch-pkg.sh`), and Alpine `.apk` packages plus static musl archives (`scripts/alpine-apk.sh`, new `x86_64-linux-musl`/`aarch64-linux-musl` Alpine container jobs)
 - **`checksums.txt`** with SHA-256 of every release asset
 
-### Changed
+### ♻️ Changed
 - Release assets are staged per build job into `release-assets/` and collected flat by the release job, fixing the release glob that silently dropped the Linux/macOS archives on v0.1.3
 - Per-target archives are now self-contained bundles (`bin/`, `man/man1/`, `completions/`, `systemd/`, `desktop/`, `icons/`, `LICENSE`); no separate TUI/daemon-only archives, raw binaries, or standalone `gtm-docs.tar.gz` are published: completions and man pages ship inside every archive
 - README gains a "GitHub Release" install section (tar.xvf + per-distro one-liners)
 
-### Fixed
+### 🐛 Fixed
 - **Lyric auto-follow freeze**: manual lyric scrolling no longer leaves the highlight frozen for the rest of the track: auto-follow resumes once playback catches up to the scrolled line, and a tab switch clears the latch
 - **Tab pane focus cycling**: Tab/Shift-Tab now cycles pane focus through the lyrics pane on the Library tab (previously only the library/settings panes), with focus state reset on tab switches
 - **Active tab highlight**: the active tab now uses selection foreground/background colors in both the Classic and Modern designs
@@ -232,30 +232,30 @@
 
 ## [0.1.4] – 2026-08-09
 
-### Fixed
+### 🐛 Fixed
 - **Manpage generation in release pipeline**: the `docs/man` manpage sources (gtm.1, gtmd.1, gtmd-ipc.1) were removed while the gtm.spec repo still carries no `man/` tree, so `manpages.sh` produced zero manpages and the release build failed. Restored the local `docs/man/*.1.md` sources and made the script fail with a clear diagnostic when no manpages can be generated
 - **CI formatting gate**: `cargo fmt --check` was failing on the Design-toggle additions in `gtm/src/ui.rs`; reformatted
 
-### Changed
+### ♻️ Changed
 - README docs section now links to the in-repo manpages (`docs/man/*.1.md`) instead of the wiki
 
 ## [0.1.3] – 2026-08-06
 
-### Fixed
+### 🐛 Fixed
 - **glibc compatibility**: Linux builds now run on Ubuntu 22.04 (glibc 2.35) instead of 24.04 (2.39), so binaries run on any system with glibc >= 2.35 (Debian 12 / Ubuntu 22.04 and later)
 - **Broken `.deb` packages**: `gtm-full` debs had `Depends: libasound2t64, libc6 (>= 2.39)` which are unresolvable on Debian 12; deps are now resolved on the Ubuntu 22.04 build host (`libasound2`, `libc6 (>= 2.35)`). Also fixed the missing `gtm` binary and asset files that were packaged as dangling symlinks (cargo-deb 3.7.0 array-asset bug: switched to the `{source, dest}` table format and added `$auto`)
 - **Decluttered releases**: per-platform `gtm-full-{platform}.tar.gz` now bundles both binaries + manpages + completions + systemd service; separate `gtm-*`/`gtmd-*` archives and raw binaries removed; all docs shipped as a single `gtm-docs.tar.gz`; the empty `gtmd` deb is no longer published
 
 ## [0.1.2] – 2026-08-05
 
-### Added
+### ✨ Added
 - **Release pipeline fixes**: Termux builds now compile `termux-elf-cleaner` from source; Termux `.deb` built via `termux-create-package` manifest; TUI-only archives (`gtm-*.tar.gz`) published; `nightly` prerelease trigger (force-tagged `nightly`)
 - **install.sh**: added `--deb`/`--type deb` path for Debian/Ubuntu and Termux; fixed version detection and latest-tag resolution (prerelease-aware)
 - **Wiki**: moved to a dedicated wiki repository (https://github.com/craftty-org/gtm/wiki)
 
 ## [0.1.0] – 2025-07-10
 
-### Added
+### ✨ Added
 - **Tab-based TUI**: Now Playing, Library, Settings tabs with Tab/Shift+Tab navigation
 - **Library browser**: left-pane categories (All Tracks, Playlists, Favourites, Recent) with counts, right-pane track listing
 - **Settings panel**: volume, crossfade, repeat, shuffle, sleep timer, about, overlays
@@ -270,7 +270,7 @@
 - **IPC protocol**: mixed JSON+binary framing over Unix socket
 - **Packaging**: DEB (cargo-deb), RPM spec, Nix flake, Makefile, systemd user service, desktop file
 
-### Fixed
+### 🐛 Fixed
 - `blocking_lock()` crash in IPC worker: switched to async `.lock().await`
 - 10-second blank startup: background auto-scan, non-blocking socket accept
 - Unsafe volume clamp on daemon startup: explicit `min(100)`
@@ -278,7 +278,7 @@
 - Enter key in Library tab now plays selected track
 - Position tracking freezes correctly on pause
 
-### Changed
+### ♻️ Changed
 - Ported from Nim to Rust (gtm-rs)
 - Architecture: client/daemon split over Unix socket IPC
 - Audio backend: rodio + symphonia (was GStreamer)

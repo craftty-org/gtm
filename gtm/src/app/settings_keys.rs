@@ -108,6 +108,10 @@ impl App {
                     save_prefs(&self.current_prefs());
                 }
                 18 => {
+                    self.notify_new_release = !self.notify_new_release;
+                    save_prefs(&self.current_prefs());
+                }
+                19 => {
                     self.resume_on_start = !self.resume_on_start;
                     save_prefs(&self.current_prefs());
                 }

@@ -56,16 +56,12 @@ pub fn parse_transcript(body: &str) -> LrcData {
     if looks_like_vtt(trimmed) {
         return finish(parse_cues(trimmed, "", "."));
     }
-    let lines = trimmed
-        .lines()
-        .map(clean_text)
-        .filter(|l| !l.is_empty())
-        .map(|text| LrcLine {
-            timestamp: -1.0,
-            text,
-            words: Vec::new(),
-        })
-        .collect();
+    let body = if looks_like_html(trimmed) {
+        strip_html_blocks(trimmed)
+    } else {
+        trimmed.to_string()
+    };
+    let lines = parse_plain_timed(&body);
     finish(lines)
 }
 
@@ -311,6 +307,147 @@ fn clean_text(s: &str) -> String {
         .replace("&#39;", "'")
         .trim()
         .to_string()
+}
+
+fn looks_like_html(body: &str) -> bool {
+    let l = body.to_ascii_lowercase();
+    l.contains("<html") || l.contains("<body") || l.contains("<div") || l.contains("<p>")
+}
+
+fn strip_html_blocks(body: &str) -> String {
+    let mut s = body.to_string();
+    for tag in ["script", "style", "noscript", "svg", "header", "footer", "nav"] {
+        let open = format!("<{tag}");
+        let close = format!("</{tag}>");
+        loop {
+            let lower = s.to_ascii_lowercase();
+            let Some(start) = lower.find(&open) else { break };
+            let Some(end_rel) = lower[start..].find(&close) else {
+                s.replace_range(start.., "");
+                break;
+            };
+            let end = start + end_rel + close.len();
+            s.replace_range(start..end, "\n");
+        }
+    }
+    s.replace("<br>", "\n")
+        .replace("<br/>", "\n")
+        .replace("<br />", "\n")
+        .replace("</p>", "\n")
+        .replace("</div>", "\n")
+        .replace("</li>", "\n")
+        .replace("</h1>", "\n")
+        .replace("</h2>", "\n")
+        .replace("</h3>", "\n")
+        .replace("</h4>", "\n")
+}
+
+fn parse_plain_timed(body: &str) -> Vec<LrcLine> {
+    let mut out = Vec::new();
+    let mut pending_ts: Option<f64> = None;
+    let mut pending_speaker: Option<String> = None;
+    for raw in body.lines() {
+        let line = clean_text(raw);
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(ts) = parse_inline_timestamp(line) {
+            // Line is mostly a timestamp, or contains one.
+            let rest = strip_inline_timestamp(line);
+            if rest.is_empty() {
+                pending_ts = Some(ts);
+                continue;
+            }
+            // Speaker/timestamp on same line, text may follow.
+            let (speaker, text) = split_speaker_text(&rest);
+            let full = join_speaker_text(speaker.or(pending_speaker.take()), &text);
+            if !full.is_empty() {
+                out.push(LrcLine { timestamp: ts, text: full, words: Vec::new() });
+                pending_ts = None;
+                continue;
+            }
+            pending_ts = Some(ts);
+            if let Some(sp) = split_speaker_text(&rest).0 {
+                pending_speaker = Some(sp);
+            }
+            continue;
+        }
+        if let Some(ts) = pending_ts.take() {
+            let (speaker, text) = split_speaker_text(line);
+            let speaker = speaker.or(pending_speaker.take());
+            let full = join_speaker_text(speaker, &text);
+            if !full.is_empty() {
+                out.push(LrcLine { timestamp: ts, text: full, words: Vec::new() });
+            }
+            continue;
+        }
+        // No timestamp: keep as untimed line.
+        out.push(LrcLine {
+            timestamp: -1.0,
+            text: line.to_string(),
+            words: Vec::new(),
+        });
+    }
+    out
+}
+
+fn parse_inline_timestamp(line: &str) -> Option<f64> {
+    for token in line.split_whitespace() {
+        let t = token.trim_matches(|c: char| matches!(c, '(' | ')' | '[' | ']'));
+        if let Some(ts) = parse_timestamp(t, "", ".") {
+            // Avoid treating plain numbers as timestamps unless in timestamp format.
+            if t.contains(':') {
+                return Some(ts);
+            }
+        }
+    }
+    None
+}
+
+fn strip_inline_timestamp(line: &str) -> String {
+    let mut out = Vec::new();
+    for token in line.split_whitespace() {
+        let t = token.trim_matches(|c: char| matches!(c, '(' | ')' | '[' | ']'));
+        if t.contains(':') && parse_timestamp(t, "", ".").is_some() {
+            continue;
+        }
+        out.push(token);
+    }
+    out.join(" ")
+}
+
+fn split_speaker_text(line: &str) -> (Option<String>, String) {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return (None, String::new());
+    }
+    // Heuristic: short line with no sentence punctuation likely speaker name.
+    if trimmed.len() <= 48
+        && !trimmed.ends_with('.')
+        && !trimmed.ends_with('?')
+        && !trimmed.ends_with('!')
+        && trimmed.split_whitespace().count() <= 6
+        && trimmed
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_uppercase())
+    {
+        // But avoid treating normal short sentences as speakers.
+        let words = trimmed.split_whitespace().count();
+        if words <= 4 && !trimmed.contains(':') {
+            return (Some(trimmed.to_string()), String::new());
+        }
+    }
+    (None, trimmed.to_string())
+}
+
+fn join_speaker_text(speaker: Option<String>, text: &str) -> String {
+    match (speaker, text.trim()) {
+        (Some(s), "") => s,
+        (Some(s), t) => format!("{s}: {t}"),
+        (None, t) => t.to_string(),
+    }
 }
 
 /// Podscribe-style JSON: `{"results": [{"startTime", "endTime", "body"}]}`.

@@ -61,6 +61,13 @@ pub struct PodcastResult {
     pub country: String,
 }
 
+/// A timestamp/chapter marker for a podcast episode.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PodcastTimestamp {
+    pub secs: u64,
+    pub label: String,
+}
+
 /// A single podcast episode.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PodcastEpisode {
@@ -89,6 +96,9 @@ pub struct PodcastEpisode {
     /// than downloading an HTML page and reporting "no transcript".
     #[serde(default)]
     pub transcripts: Vec<PodcastTranscript>,
+    /// Jump points extracted from description/chapters.
+    #[serde(default)]
+    pub timestamps: Vec<PodcastTimestamp>,
 }
 
 /// A transcript an episode's feed entry points at.

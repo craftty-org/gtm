@@ -47,7 +47,7 @@ pub use paths::{
     termux_music_dirs,
 };
 pub use playlist::{M3u8Format, PlaylistFormat, PlaylistFormatKind, PlsFormat};
-pub use podcast::{PodcastEpisode, PodcastFeed, PodcastStatus};
+pub use podcast::{PodcastEpisode, PodcastFeed, PodcastStatus, PodcastTimestamp};
 pub use radio::RadioStation;
 pub use source::{
     SOURCES, SRC_CHART, SRC_LOCAL, SRC_PODCAST, SRC_PROVIDER, SRC_RADIO, SRC_SPOTIFY, is_known,

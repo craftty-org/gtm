@@ -95,32 +95,15 @@ impl App {
         // it and falls through, so the key that dismissed it also does what the
         // user meant.
         if self.onboard {
-            self.onboard = false;
-            self.mark_all_dirty();
-            // `s` follows the call to action the welcome is showing, and is
-            // claimed before the dispatch below so it opens the repository
-            // instead of doing whatever `s` means to the list behind it. It is
-            // not a new binding: once the welcome is gone `s` is free again.
             if key.code == KeyCode::Char('s') && key.modifiers.is_empty() {
                 open_url(crate::ui::bigtext::REPO, &self.ipc_tx);
                 return true;
             }
-            // `q` and Esc are the two ways out, and both mean "close this pane"
-            // rather than "close the program". They have to be claimed here,
-            // above the dispatch, because `q` is `Quit` in the global keymap and
-            // Esc is not what closes the program either -- both of them were
-            // dismissing the splash and then going on to quit, which read as the
-            // app hanging up on you the moment you tried to look at it.
-            // `H` says "I have seen this", and means it: the flag is written
-            // here rather than left for the next `save_prefs`, because a user
-            // whose complaint is the welcome reappearing is by definition not
-            // going to change a setting afterwards. Claimed above the dispatch
-            // so it cannot fall through to whatever `H` means in the list
-            // behind the pane -- `Alt+H` is the health check, plain `H` was
-            // unclaimed.
             if is_onboard_hide(&key) {
                 self.onboard_hidden = true;
                 self.show_welcome = false;
+                self.onboard = false;
+                self.mark_all_dirty();
                 let mut prefs = crate::app::prefs::load_prefs();
                 prefs.show_welcome = false;
                 crate::app::prefs::save_prefs(&prefs);
@@ -135,8 +118,40 @@ impl App {
                 return true;
             }
             if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
+                self.onboard = false;
+                self.mark_all_dirty();
                 return true;
             }
+            let max_scroll = self.welcome_changelog.len().saturating_sub(1);
+            match key.code {
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.welcome_scroll = (self.welcome_scroll + 1).min(max_scroll);
+                    return true;
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.welcome_scroll = self.welcome_scroll.saturating_sub(1);
+                    return true;
+                }
+                KeyCode::PageDown => {
+                    self.welcome_scroll = (self.welcome_scroll + 10).min(max_scroll);
+                    return true;
+                }
+                KeyCode::PageUp => {
+                    self.welcome_scroll = self.welcome_scroll.saturating_sub(10);
+                    return true;
+                }
+                KeyCode::Home | KeyCode::Char('g') => {
+                    self.welcome_scroll = 0;
+                    return true;
+                }
+                KeyCode::End | KeyCode::Char('G') => {
+                    self.welcome_scroll = max_scroll;
+                    return true;
+                }
+                _ => {}
+            }
+            self.onboard = false;
+            self.mark_all_dirty();
         }
         // Ctrl+Z: suspend to background (pass-through SIGTSTP)
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('z') {
@@ -2868,6 +2883,42 @@ impl App {
                         }
                     }
                 }
+                KeyCode::Char('m') => {
+                    let idx = self.pickers.top().map_or(0, |o| o.selected);
+                    if let Some(ep) = self.podcast.episodes.get(idx) {
+                        self.podcast.timestamps = ep.timestamps.clone();
+                        self.podcast.timestamps_title = ep.title.clone();
+                        self.pickers.open(PickerId::PodcastTimestamps);
+                    }
+                }
+                KeyCode::Up | KeyCode::Down => {
+                    self.move_picker_selection(key.code == KeyCode::Down);
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        // ─── Podcast timestamps ───
+        if matches!(
+            self.pickers.top().map(|o| o.id),
+            Some(PickerId::PodcastTimestamps)
+        ) {
+            match key.code {
+                KeyCode::Enter => {
+                    let idx = self.pickers.top().map_or(0, |o| o.selected);
+                    if let Some(ts) = self.podcast.timestamps.get(idx) {
+                        let secs = ts.secs as f64;
+                        let c = self.client.clone();
+                        self.pickers.close_top();
+                        let _ = tx.try_send(TuiCommand::fire(move || async move {
+                            let _ = c.seek(secs).await;
+                        }));
+                    }
+                }
+                KeyCode::Esc | KeyCode::Backspace => {
+                    self.pickers.close_top();
+                }
                 KeyCode::Up | KeyCode::Down => {
                     self.move_picker_selection(key.code == KeyCode::Down);
                 }
@@ -3656,6 +3707,9 @@ impl App {
                                     self.cycle_track_sort();
                                 } else if action == "podcasts" {
                                     self.pickers.open(PickerId::PodcastFeeds);
+                                } else if action == "podcast timestamps" {
+                                    self.pickers.close_top();
+                                    self.open_podcast_timestamps();
                                 } else if action == "settings" {
                                     self.pickers.open(PickerId::Settings);
                                 } else if action == "queue" {

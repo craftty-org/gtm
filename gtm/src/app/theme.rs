@@ -74,6 +74,7 @@ impl App {
             show_preview: self.show_preview,
             preview_delay_secs: self.preview_delay_secs,
             show_welcome: self.show_welcome,
+            notify_new_release: self.notify_new_release,
             resume_on_start: self.resume_on_start,
         }
     }

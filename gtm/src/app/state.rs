@@ -31,6 +31,8 @@ pub enum TrackInfoKind {
     /// Row in the left-pane Radio category. Stations are virtual `radio://`
     /// rows, never library tracks, so `Track` had nothing to describe.
     RadioStation,
+    PodcastFeed,
+    PodcastEpisode,
 }
 
 pub enum InputMode {
@@ -560,6 +562,14 @@ pub struct PodcastView {
     /// empty would be a no-op because a non-empty result set always looked
     /// like the landing page.
     pub directory: bool,
+    /// Timestamps for the currently selected podcast episode.
+    pub timestamps: Vec<PodcastTimestamp>,
+    pub timestamps_title: String,
+    /// Open timestamp picker when episodes for current playing feed arrive.
+    pub timestamps_pending: bool,
+    /// Preview episodes for selected feed in Podcasts category (not drilled).
+    pub preview_feed_id: Option<String>,
+    pub preview_episodes: Vec<PodcastEpisode>,
 }
 
 /// Which list the unified Radio picker is showing.

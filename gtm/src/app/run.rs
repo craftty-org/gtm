@@ -148,6 +148,7 @@ impl App {
         // empty falls back to the full set; active category clamped in).
         self.left_pane_lists = clean_left_pane(&prefs.left_pane_lists);
         self.show_preview = prefs.show_preview;
+        self.notify_new_release = prefs.notify_new_release;
         if !self
             .visible_library_indices()
             .contains(&self.library_category)
@@ -360,6 +361,20 @@ impl App {
                     .await
                     .unwrap_or(None);
                 let _ = ipc_tx.send(IpcResult::CoverPicker(picker));
+            });
+        }
+
+        if self.notify_new_release {
+            let ipc_tx = self.ipc_tx.clone();
+            tokio::spawn(async move {
+                if let Some(ver) = check_new_release().await {
+                    let _ = ipc_tx.send(IpcResult::Notification(
+                        "Update".to_string(),
+                        format!("New release available: {ver}"),
+                        NotificationKind::Info,
+                        NotifType::System,
+                    ));
+                }
             });
         }
 
@@ -1009,6 +1024,10 @@ impl App {
                     IpcResult::PodcastFeeds(feeds) => {
                         self.podcast.feeds = feeds;
                         self.podcast.feeds_pending = false;
+                        if self.library_category == LIB_PODCASTS {
+                            self.update_track_popup();
+                            self.data_dirty = true;
+                        }
                     }
                     IpcResult::PodcastSearch(term, results) => {
                         if term != self.podcast.search_term {
@@ -1022,13 +1041,42 @@ impl App {
                         self.data_dirty = true;
                     }
                     IpcResult::PodcastEpisodes(feed_id, eps) => {
-                        if let Some(want) = &self.podcast.episodes_feed_id
-                            && want != &feed_id
-                        {
-                            // Answers a feed the user has already left.
+                        let for_drilled = self.podcast.episodes_feed_id.as_deref() == Some(feed_id.as_str());
+                        let for_preview = self.podcast.preview_feed_id.as_deref() == Some(feed_id.as_str());
+                        if !for_drilled && !for_preview {
                             continue;
                         }
-                        self.podcast.episodes = eps;
+                        if for_drilled {
+                            self.podcast.episodes = eps.clone();
+                            if self.podcast.timestamps_pending {
+                                self.podcast.timestamps_pending = false;
+                                if let Some(track) = self.state.current_track.as_ref() {
+                                    if let Some(rest) = track.path.strip_prefix("podcast://") {
+                                        if let Some((fid, idx_s)) = rest.rsplit_once('/') {
+                                            if fid == feed_id {
+                                                if let Ok(idx) = idx_s.parse::<usize>() {
+                                                    if let Some(ep) = self.podcast.episodes.get(idx) {
+                                                        self.podcast.timestamps = ep.timestamps.clone();
+                                                        self.podcast.timestamps_title = ep.title.clone();
+                                                        self.pickers.open(PickerId::PodcastTimestamps);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if for_preview {
+                            self.podcast.preview_episodes = eps;
+                        } else if for_drilled {
+                            self.podcast.preview_episodes = self.podcast.episodes.clone();
+                            self.podcast.preview_feed_id = Some(feed_id.clone());
+                        }
+                        if self.library_category == LIB_PODCASTS {
+                            self.update_track_popup();
+                            self.data_dirty = true;
+                        }
                     }
                     IpcResult::RadioSearch(stations) => {
                         self.radio.search = stations;
@@ -1085,13 +1133,18 @@ impl App {
                         }
                     }
                     IpcResult::UpNextCover { query, data } => {
-                        // A reply for a track the station has already moved on
-                        // from is dropped rather than drawn under whatever
-                        // happens to be next now.
                         if self.up_next_cover_query.as_deref() == Some(query.as_str()) {
                             self.up_next_cover = data;
                             self.up_next_cover_slot.clear();
                             self.up_next_cover_sync();
+                            self.cover_art_dirty = true;
+                        }
+                    }
+                    IpcResult::HeroCover { query, data } => {
+                        if self.hero_cover_query.as_deref() == Some(query.as_str()) {
+                            self.hero_cover = data;
+                            self.hero_cover_slot.clear();
+                            self.hero_cover_stateful = self.protocol(self.hero_cover.as_deref());
                             self.cover_art_dirty = true;
                         }
                     }
@@ -2270,4 +2323,51 @@ impl App {
             self.library_pane_focus = !self.library_pane_focus;
         }
     }
+}
+
+async fn check_new_release() -> Option<String> {
+    let cur = option_env!("CARGO_PKG_VERSION").unwrap_or("0.0.0");
+    let client = reqwest::Client::builder()
+        .user_agent(format!("gtm/{cur}"))
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .ok()?;
+    let res = client
+        .get("https://api.github.com/repos/craftty-org/gtm/releases/latest")
+        .send()
+        .await
+        .ok()?;
+    if !res.status().is_success() {
+        return None;
+    }
+    let body: serde_json::Value = res.json().await.ok()?;
+    let tag = body.get("tag_name")?.as_str()?.trim();
+    let latest = tag.trim_start_matches('v');
+    if version_newer(latest, cur) {
+        Some(latest.to_string())
+    } else {
+        None
+    }
+}
+
+fn version_newer(latest: &str, cur: &str) -> bool {
+    let parse = |s: &str| -> Vec<u64> {
+        s.split(['.', '-', '+'])
+            .filter_map(|p| p.parse::<u64>().ok())
+            .collect()
+    };
+    let l = parse(latest);
+    let c = parse(cur);
+    let n = l.len().max(c.len());
+    for i in 0..n {
+        let lv = *l.get(i).unwrap_or(&0);
+        let cv = *c.get(i).unwrap_or(&0);
+        if lv > cv {
+            return true;
+        }
+        if lv < cv {
+            return false;
+        }
+    }
+    false
 }

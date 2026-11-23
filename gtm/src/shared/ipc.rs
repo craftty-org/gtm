@@ -238,6 +238,7 @@ pub enum SyncKind {
 pub enum CacheKind {
     Lyrics,
     Covers,
+    All,
 }
 
 /// Wire request: client -> daemon.

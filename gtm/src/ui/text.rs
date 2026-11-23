@@ -400,8 +400,6 @@ pub(crate) fn track_info_fields(app: &App) -> Option<TrackInfoFields> {
         TrackInfoKind::RadioStation => {
             let selection = app.radio_left_selection_at(app.list_pos())?;
             let st = &selection.station;
-            // The host, not the whole stream URL: the path and query on a
-            // station URL are long and identify nothing the reader can use.
             let host = st
                 .url
                 .split("://")
@@ -421,9 +419,51 @@ pub(crate) fn track_info_fields(app: &App) -> Option<TrackInfoFields> {
                 artist: "Radio".to_string(),
                 album: None,
                 meta,
-                // See `App::popup_cover_url`: a station has no icon without a
-                // directory lookup.
                 has_cover: false,
+            })
+        }
+        TrackInfoKind::PodcastFeed => {
+            let feed = app.podcast.feeds.get(app.list_pos())?;
+            let mut meta = format!("{} episodes", feed.episodes);
+            let eps = if app.podcast.episodes_feed_id.as_deref() == Some(feed.id.as_str()) {
+                Some(&app.podcast.episodes)
+            } else if app.podcast.preview_feed_id.as_deref() == Some(feed.id.as_str()) {
+                Some(&app.podcast.preview_episodes)
+            } else {
+                None
+            };
+            if let Some(eps) = eps {
+                let total: u64 = eps.iter().filter_map(|e| e.duration_secs).sum();
+                if total > 0 {
+                    let h = total / 3600;
+                    let m = (total % 3600) / 60;
+                    meta = if h > 0 {
+                        format!("{} episodes | {}h {}m", eps.len(), h, m)
+                    } else {
+                        format!("{} episodes | {}m", eps.len(), m)
+                    };
+                }
+            }
+            Some(TrackInfoFields {
+                title: feed.title.clone(),
+                artist: "Podcast".to_string(),
+                album: (!feed.description.trim().is_empty()).then(|| feed.description.clone()),
+                meta,
+                has_cover: app.track_popup_cover.is_some() || feed.image_url.is_some(),
+            })
+        }
+        TrackInfoKind::PodcastEpisode => {
+            let ep = app.podcast.episodes.get(app.list_pos())?;
+            let dur = ep
+                .duration_secs
+                .map(|s| format!(" [{}]", format_duration_short(s)))
+                .unwrap_or_default();
+            Some(TrackInfoFields {
+                title: ep.title.clone(),
+                artist: ep.feed_title.clone(),
+                album: ep.description.clone().filter(|d| !d.trim().is_empty()),
+                meta: format!("{} | Podcast", dur),
+                has_cover: app.track_popup_cover.is_some() || ep.image_url.is_some(),
             })
         }
         TrackInfoKind::ChartTrack => {

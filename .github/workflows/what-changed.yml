@@ -1,3 +1,5 @@
+# Commit convention: conventional commits with emoji per type
+# feat✨ fix🐛 docs📝 chore🔧 refactor♻️ perf⚡ test✅ ci👷 build📦 style🎨
 name: What changed
 
 on:

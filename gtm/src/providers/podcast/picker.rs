@@ -160,4 +160,36 @@ impl Pickers {
             inner,
         );
     }
+
+    pub(crate) fn render_podcast_timestamps(f: &mut ratatui::Frame, area: Rect, app: &mut App) {
+        let mut rows = Vec::new();
+        for ts in &app.podcast.timestamps {
+            let m = ts.secs / 60;
+            let s = ts.secs % 60;
+            let h = m / 60;
+            let mm = m % 60;
+            let stamp = if h > 0 {
+                format!("{h}:{mm:02}:{s:02}")
+            } else {
+                format!("{m}:{s:02}")
+            };
+            rows.push(format!(" [{stamp}] {}", ts.label));
+        }
+        let title = if app.podcast.timestamps_title.is_empty() {
+            " Timestamps ".to_string()
+        } else {
+            format!(" {} ", app.podcast.timestamps_title)
+        };
+        Self::render_scroll_rows(
+            f,
+            area,
+            app,
+            ScrollList {
+                title: &title,
+                empty_msg: "no timestamps found for this episode",
+            },
+            Vec::new(),
+            rows,
+        );
+    }
 }

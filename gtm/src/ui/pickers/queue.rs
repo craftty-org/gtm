@@ -177,11 +177,9 @@ impl Pickers {
         // any tracklist at least as tall as the panel, which is the common
         // case for a station that publishes its history — so the sleeve, and
         // the cover fetch it exists for, never drew at all.
-        let next = app
-            .state
-            .radio_tracks
-            .tracks
-            .get(on_air + 1)
+        let next_idx = app.state.radio_tracks.next_index();
+        let next = next_idx
+            .and_then(|i| app.state.radio_tracks.tracks.get(i))
             .map(|t| t.query());
         app.fetch_up_next_cover();
         let strip_h = if next.is_some() {
@@ -206,12 +204,43 @@ impl Pickers {
         let rows: Vec<(String, bool, bool)> = (scroll_start..scroll_end)
             .map(|i| {
                 let track = &app.state.radio_tracks.tracks[i];
+                let wall = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(now);
                 let age = match track.start {
-                    Some(start) if now > 0 && start <= now => match (now - start) / 60 {
+                    Some(start) if wall > 0 && start <= wall => match (wall - start) / 60 {
                         0 => "now".to_string(),
                         m => format!("-{m}m"),
                     },
-                    _ => String::new(),
+                    Some(start) if wall > 0 && start > wall => {
+                        let m = ((start - wall) as u64).div_ceil(60);
+                        format!("in {m}m")
+                    }
+                    _ => {
+                        if i > on_air {
+                            let est = app.state.radio_tracks.tracks.get(on_air).and_then(|cur| {
+                                let s = cur.start?;
+                                let d = cur.duration? as i64;
+                                let mut t = s + d + 5;
+                                for j in (on_air + 1)..i {
+                                    let tr = app.state.radio_tracks.tracks.get(j)?;
+                                    t += tr.duration.unwrap_or(210) as i64 + 5;
+                                }
+                                Some(t)
+                            });
+                            match est {
+                                Some(start) if wall > 0 && start > wall => {
+                                    let m = ((start - wall) as u64).div_ceil(60);
+                                    format!("~in {m}m")
+                                }
+                                Some(start) if wall > 0 && start <= wall => "soon".to_string(),
+                                _ => String::new(),
+                            }
+                        } else {
+                            String::new()
+                        }
+                    }
                 };
                 let age = if age.is_empty() {
                     String::new()

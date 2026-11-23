@@ -377,10 +377,11 @@ pub(crate) fn onboard(f: &mut ratatui::Frame, area: Rect, app: &App) {
     // The tallest the name may be on a pane with room for the text under it.
     let size = fit(inner_w, area.height.saturating_sub(12));
     let (_, mark_h) = glyph_box(size);
-    // Name, two gutters, four text rows, the border and the vertical padding.
+    let has_changelog = !app.welcome_changelog.is_empty();
+    let extra = if has_changelog { 10 } else { 0 };
     let h = mark_h
         .saturating_add(GUTTER * 2)
-        .saturating_add(4 + 4)
+        .saturating_add(4 + 4 + extra)
         .min(area.height.saturating_sub(2));
     let pane = Rect {
         x: area.x + area.width.saturating_sub(w) / 2,
@@ -390,9 +391,6 @@ pub(crate) fn onboard(f: &mut ratatui::Frame, area: Rect, app: &App) {
     };
 
     f.render_widget(Clear, pane);
-    // Same top-right Esc chip every picker carries, so the pane is dismissible
-    // by the same key and says so the same way rather than being a modal the
-    // user has to guess at.
     let block = Block::default()
         .title(Line::from(Span::styled(
             " Welcome ",
@@ -421,8 +419,6 @@ pub(crate) fn onboard(f: &mut ratatui::Frame, area: Rect, app: &App) {
     let inner = block.inner(pane);
     f.render_widget(block, pane);
 
-    // Name, gutters, the lines that say what this is, the hint carrying the call
-    // to action, and the provider row pinned to the last row the panel covers.
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -430,7 +426,7 @@ pub(crate) fn onboard(f: &mut ratatui::Frame, area: Rect, app: &App) {
             Constraint::Length(GUTTER),
             Constraint::Length(1),
             Constraint::Length(1),
-            Constraint::Length(GUTTER),
+            Constraint::Length(1),
             Constraint::Min(0),
             Constraint::Length(1),
         ])
@@ -439,32 +435,69 @@ pub(crate) fn onboard(f: &mut ratatui::Frame, area: Rect, app: &App) {
     logo(f, rows[0], app, size);
     caption(f, rows[2], TITLE, Style::default().fg(app.theme.fg));
     caption(f, rows[3], SITE, Style::default().fg(app.theme.accent));
-    // In the slack, so it sits between the identity block and the provider row
-    // rather than crowding either of them, and disappears with the slack when
-    // the pane is too short to hold it.
-    if rows[5].height > 0 {
+    let hint_line = Line::from(vec![
+        Span::styled(
+            HINT.to_string(),
+            Style::default()
+                .fg(app.theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("  {}", mark(&app.icon_style)),
+            Style::default().fg(app.theme.fg_dim),
+        ),
+        Span::raw("   "),
+        Span::styled(
+            NEVER_AGAIN.to_string(),
+            Style::default().fg(app.theme.fg_dim),
+        ),
+    ]);
+    if has_changelog && rows[5].height > 2 {
+        let split = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(1)])
+            .split(rows[5]);
         f.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(
-                    HINT.to_string(),
+            Paragraph::new(hint_line).alignment(Alignment::Center),
+            split[0],
+        );
+        let ch_area = split[1];
+        let title = Line::from(Span::styled(
+            " Changelog (j/k to scroll) ",
+            Style::default()
+                .fg(app.theme.accent)
+                .add_modifier(Modifier::BOLD),
+        ));
+        let block = Block::default()
+            .borders(Borders::TOP)
+            .title(title)
+            .border_style(Style::default().fg(app.theme.fg_dim));
+        let ch_inner = block.inner(ch_area);
+        f.render_widget(block, ch_area);
+        let max = app.welcome_changelog.len().saturating_sub(1);
+        let scroll = app.welcome_scroll.min(max);
+        let lines: Vec<Line> = app
+            .welcome_changelog
+            .iter()
+            .skip(scroll)
+            .take(ch_inner.height as usize)
+            .map(|l| {
+                let style = if l.starts_with('#') {
                     Style::default()
                         .fg(app.theme.accent)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                // The mark rides at the end of the sentence rather than on a row
-                // of its own: it is the logo for the link the sentence names, so
-                // it reads as part of it.
-                Span::styled(
-                    format!("  {}", mark(&app.icon_style)),
-                    Style::default().fg(app.theme.fg_dim),
-                ),
-                Span::raw("   "),
-                Span::styled(
-                    NEVER_AGAIN.to_string(),
-                    Style::default().fg(app.theme.fg_dim),
-                ),
-            ]))
-            .alignment(Alignment::Center),
+                        .add_modifier(Modifier::BOLD)
+                } else if l.starts_with("- ") || l.starts_with("* ") {
+                    Style::default().fg(app.theme.fg)
+                } else {
+                    Style::default().fg(app.theme.fg_dim)
+                };
+                Line::from(Span::styled(l.clone(), style))
+            })
+            .collect();
+        f.render_widget(Paragraph::new(lines), ch_inner);
+    } else if rows[5].height > 0 {
+        f.render_widget(
+            Paragraph::new(hint_line).alignment(Alignment::Center),
             rows[5],
         );
     }

@@ -264,6 +264,11 @@ impl CommandPalette {
                 hint: "podcasts",
             },
             Command {
+                label: "Podcast Timestamps",
+                keys: "",
+                hint: "podcast timestamps",
+            },
+            Command {
                 label: "Settings",
                 keys: "Alt+,",
                 hint: "settings",

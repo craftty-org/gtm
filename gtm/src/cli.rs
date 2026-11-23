@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use crate::shared::client::DaemonClient;
 use crate::shared::daemon::ensure_daemon_running;
 use crate::shared::global::{PlaybackStatus, RepeatMode};
-use crate::shared::ipc::HealthStatus;
+use crate::shared::ipc::{CacheKind, HealthStatus};
 use crate::shared::resolve_command_socket;
 use clap::{Parser, Subcommand};
 
@@ -109,6 +109,8 @@ pub enum CliCommand {
     CheckHealth,
     /// Quit the daemon
     Quit,
+    /// Clean cached data (cache dir and library db)
+    Clean,
     /// Manage config file
     Config {
         #[arg(long)]
@@ -354,6 +356,11 @@ pub fn run(socket: Option<String>, json: bool, verbose: bool, cmd: &CliCommand) 
             }
             CliCommand::Quit => client
                 .quit()
+                .await
+                .map(|()| "ok".into())
+                .map_err(|e| e.to_string()),
+            CliCommand::Clean => client
+                .clear_cache(CacheKind::All)
                 .await
                 .map(|()| "ok".into())
                 .map_err(|e| e.to_string()),

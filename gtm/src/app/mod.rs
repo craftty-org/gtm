@@ -23,7 +23,7 @@ pub(crate) use crate::shared::global::{DaemonState, EqPreset, PlaybackStatus, Re
 pub(crate) use crate::shared::ipc::{CacheKind, DaemonEvent, DaemonRes, HealthReport, SyncKind};
 pub(crate) use crate::shared::log::log;
 pub(crate) use crate::shared::podcast::{
-    PodcastEpisode, PodcastFeed, PodcastResult, PodcastStatus,
+    PodcastEpisode, PodcastFeed, PodcastResult, PodcastStatus, PodcastTimestamp,
 };
 pub(crate) use crate::shared::radio::{RadioCountry, RadioStation, RadioTag, RadioTrack};
 pub(crate) use crate::shared::secret::{SPOTIFY_CLIENT_ID, get_secret, set_secret};
@@ -418,6 +418,11 @@ pub struct App {
     /// Whether the welcome pane is shown at launch. Mirrors the config so `H`
     /// on the pane can clear it without going through a settings round trip.
     pub(crate) show_welcome: bool,
+    /// Notify when a newer GitHub release is available.
+    pub(crate) notify_new_release: bool,
+    /// Changelog lines shown in the welcome window.
+    pub(crate) welcome_changelog: Vec<String>,
+    pub(crate) welcome_scroll: usize,
     /// Cover for the track the station plays next, and its protocol.
     ///
     /// Its own slot rather than the now playing pane's because that one is
@@ -427,6 +432,10 @@ pub struct App {
     pub(crate) up_next_cover_stateful: Option<StatefulProtocol>,
     pub(crate) up_next_cover_query: Option<String>,
     pub(crate) up_next_cover_slot: FetchSlot<String>,
+    pub(crate) hero_cover: Option<Vec<u8>>,
+    pub(crate) hero_cover_stateful: Option<StatefulProtocol>,
+    pub(crate) hero_cover_query: Option<String>,
+    pub(crate) hero_cover_slot: FetchSlot<String>,
     /// Whether the daemon should resume playing at startup. Read by the daemon
     /// from the same config file; held here so the settings row can flip it.
     pub(crate) resume_on_start: bool,
@@ -898,6 +907,10 @@ pub(crate) enum IpcResult {
         query: String,
         data: Option<Vec<u8>>,
     },
+    HeroCover {
+        query: String,
+        data: Option<Vec<u8>>,
+    },
     ChartTracksLoaded(Vec<crate::shared::chart::ChartTrack>),
     ChartsSources(Vec<crate::shared::chart::ChartSource>),
     /// Last.fm link status refreshed after a setup action completes.
@@ -1054,6 +1067,25 @@ pub(crate) fn try_open_browser(url: &str, ipc_tx: &mpsc::UnboundedSender<IpcResu
                 .into(),
         ));
     });
+}
+
+fn load_welcome_changelog() -> Vec<String> {
+    let candidates = [
+        std::path::PathBuf::from("CHANGELOG.md"),
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join("CHANGELOG.md")))
+            .unwrap_or_default(),
+    ];
+    for p in candidates {
+        if let Ok(s) = std::fs::read_to_string(&p) {
+            return s.lines().map(|l| l.to_string()).collect();
+        }
+    }
+    include_str!("../../../CHANGELOG.md")
+        .lines()
+        .map(|l| l.to_string())
+        .collect()
 }
 
 /// Open a URL on a keypress from the welcome pane.
@@ -1510,7 +1542,14 @@ impl App {
             up_next_cover_stateful: None,
             up_next_cover_query: None,
             up_next_cover_slot: FetchSlot::default(),
+            hero_cover: None,
+            hero_cover_stateful: None,
+            hero_cover_query: None,
+            hero_cover_slot: FetchSlot::default(),
             show_welcome: prefs.show_welcome,
+            notify_new_release: prefs.notify_new_release,
+            welcome_changelog: load_welcome_changelog(),
+            welcome_scroll: 0,
             resume_on_start: prefs.resume_on_start,
             preview_hover: None,
             preview_since: None,

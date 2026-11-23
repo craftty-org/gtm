@@ -290,10 +290,17 @@ cargo test --workspace
 
 > [!note]
 >
-> Use [conventional commits](https://www.conventionalcommits.org/):
+> Use [conventional commits](https://www.conventionalcommits.org/) with an emoji per type:
 >
-> ```
-> feat: add titles-only track rows in the library
-> fix: don't cut the track tail during crossfade
-> docs: document install-from-source in the README
-> ```
+> | Type | Emoji | Example |
+> |------|-------|---------|
+> | feat | ✨ | `feat: ✨ add titles-only track rows in the library` |
+> | fix | 🐛 | `fix: 🐛 don't cut the track tail during crossfade` |
+> | docs | 📝 | `docs: 📝 document install-from-source in the README` |
+> | chore | 🔧 | `chore: 🔧 update dependencies` |
+> | refactor | ♻️ | `refactor: ♻️ simplify queue handling` |
+> | perf | ⚡ | `perf: ⚡ reduce cover cache lookups` |
+> | test | ✅ | `test: ✅ add radio tracklist coverage` |
+> | ci | 👷 | `ci: 👷 update release workflow` |
+> | build | 📦 | `build: 📦 update packaging metadata` |
+> | style | 🎨 | `style: 🎨 format ui modules` |

@@ -183,6 +183,7 @@ impl Pickers {
                     String::new(),
                     String::new(),
                     on_off(app.show_welcome),
+                    on_off(app.notify_new_release),
                     on_off(app.resume_on_start),
                 ]
             }

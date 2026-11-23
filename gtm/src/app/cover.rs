@@ -220,14 +220,18 @@ impl App {
             LIB_PLAYLISTS => TrackInfoKind::Playlist,
             LIB_SPOTIFY => TrackInfoKind::SpotifyPlaylist,
             LIB_RADIO => TrackInfoKind::RadioStation,
-            // Charts have their own row type, and which one depends on how deep
-            // the drill-down is: the source list, an opened chart, or an opened
-            // chart's tracks.
             LIB_CHARTS => match (self.charts.selected_source, self.charts.selected_chart) {
                 (None, _) => TrackInfoKind::ChartSource,
                 (Some(_), None) => TrackInfoKind::Chart,
                 (Some(_), Some(_)) => TrackInfoKind::ChartTrack,
             },
+            LIB_PODCASTS => {
+                if self.podcast.episodes_feed_id.is_some() {
+                    TrackInfoKind::PodcastEpisode
+                } else {
+                    TrackInfoKind::PodcastFeed
+                }
+            }
             _ => TrackInfoKind::Track,
         }
     }
@@ -300,7 +304,9 @@ impl App {
             | TrackInfoKind::ChartSource
             | TrackInfoKind::Chart
             | TrackInfoKind::RadioStation
-            | TrackInfoKind::PlaylistGroup => None,
+            | TrackInfoKind::PlaylistGroup
+            | TrackInfoKind::PodcastFeed
+            | TrackInfoKind::PodcastEpisode => None,
         };
 
         let valid = match kind {
@@ -312,6 +318,8 @@ impl App {
             TrackInfoKind::Chart => self.list_pos() < self.charts.charts.len(),
             TrackInfoKind::ChartTrack => self.list_pos() < self.charts.chart_tracks.len(),
             TrackInfoKind::RadioStation => self.radio_left_rows().get(self.list_pos()).is_some(),
+            TrackInfoKind::PodcastFeed => self.list_pos() < self.podcast.feeds.len(),
+            TrackInfoKind::PodcastEpisode => self.list_pos() < self.podcast.episodes.len(),
             _ => maybe_track.is_some(),
         };
 
@@ -377,8 +385,18 @@ impl App {
         // resolves to no URL and clears the cover; see `popup_cover_url`.
         if matches!(
             kind,
-            TrackInfoKind::Chart | TrackInfoKind::ChartTrack | TrackInfoKind::RadioStation
+            TrackInfoKind::Chart
+                | TrackInfoKind::ChartTrack
+                | TrackInfoKind::RadioStation
+                | TrackInfoKind::PodcastFeed
+                | TrackInfoKind::PodcastEpisode
         ) {
+            if kind == TrackInfoKind::PodcastFeed {
+                if let Some(feed) = self.podcast.feeds.get(self.list_pos()) {
+                    let id = feed.id.clone();
+                    self.fetch_podcast_preview(id);
+                }
+            }
             self.popup_track_id = None;
             self.fetch_url_cover(self.popup_cover_url());
             return;
@@ -493,10 +511,14 @@ impl App {
         if no_image_protocol() {
             return;
         }
-        let at = self.state.radio_tracks.at;
-        let Some(next) = self.state.radio_tracks.tracks.get(at + 1).cloned() else {
-            // Off the end of the list: drop the last answer rather than leave a
-            // sleeve under a track that is no longer the next one.
+        let Some(next_idx) = self.state.radio_tracks.next_index() else {
+            self.up_next_cover = None;
+            self.up_next_cover_stateful = None;
+            self.up_next_cover_query = None;
+            self.up_next_cover_slot.clear();
+            return;
+        };
+        let Some(next) = self.state.radio_tracks.tracks.get(next_idx).cloned() else {
             self.up_next_cover = None;
             self.up_next_cover_stateful = None;
             self.up_next_cover_query = None;
@@ -533,6 +555,42 @@ impl App {
         self.up_next_cover_stateful = self.protocol(self.up_next_cover.as_deref());
     }
 
+    pub(crate) fn fetch_hero_cover(&mut self, artist: &str, title: &str) {
+        if no_image_protocol() {
+            return;
+        }
+        let query = if artist.is_empty() {
+            title.to_string()
+        } else {
+            format!("{artist} - {title}")
+        };
+        if query.trim().is_empty() {
+            return;
+        }
+        if self.hero_cover_query.as_deref() == Some(query.as_str()) {
+            return;
+        }
+        self.hero_cover_query = Some(query.clone());
+        self.hero_cover = None;
+        self.hero_cover_stateful = None;
+        if self.hero_cover_slot.pending(&query) {
+            return;
+        }
+        let client = self.client.clone();
+        let ipc = self.ipc_tx.clone();
+        let artist = artist.to_string();
+        let title = title.to_string();
+        self.hero_cover_slot.claim(query.clone(), 0);
+        tokio::spawn(async move {
+            let got = client.radio().track_cover(&artist, &title).await;
+            let bytes = got.ok().flatten().and_then(|b64| {
+                use base64::Engine as _;
+                base64::engine::general_purpose::STANDARD.decode(b64).ok()
+            });
+            let _ = ipc.send(IpcResult::HeroCover { query, data: bytes });
+        });
+    }
+
     /// Artwork for the highlighted row, for the kinds that name their image by
     /// URL rather than by library id.
     ///
@@ -541,7 +599,24 @@ impl App {
     /// that into a favicon means a directory lookup per row. The card describes
     /// the station in text instead.
     fn popup_cover_url(&self) -> Option<String> {
-        self.chart_row_art().map(|(_, url)| url)
+        if let Some((_, url)) = self.chart_row_art() {
+            return Some(url);
+        }
+        match self.track_info_kind() {
+            TrackInfoKind::PodcastFeed => self
+                .podcast
+                .feeds
+                .get(self.list_pos())
+                .and_then(|f| f.image_url.clone())
+                .filter(|u| !u.trim().is_empty()),
+            TrackInfoKind::PodcastEpisode => self
+                .podcast
+                .episodes
+                .get(self.list_pos())
+                .and_then(|e| e.image_url.clone())
+                .filter(|u| !u.trim().is_empty()),
+            _ => None,
+        }
     }
 
     /// The highlighted library row's own published artwork, if it names any.

@@ -108,6 +108,10 @@ pub struct RadioTrack {
     /// against the fetch time, so this field means one thing everywhere.
     #[serde(default)]
     pub start: Option<i64>,
+    /// Track duration in seconds, when the source publishes it or it can be
+    /// derived from adjacent stamps. Used to estimate when the next track starts.
+    #[serde(default)]
+    pub duration: Option<u32>,
     /// Cover art URL advertised by the source, when it carries one.
     #[serde(default)]
     pub art: Option<String>,
@@ -190,6 +194,48 @@ impl RadioTracklist {
             .iter()
             .position(|t| t.same_as(title))
             .unwrap_or(self.at)
+    }
+
+    /// Index of the track expected to play after the on-air entry.
+    ///
+    /// Prefers the chronologically next track by start time. Falls back to the
+    /// adjacent entry in the opposite direction of history when timestamps are
+    /// absent.
+    pub fn next_index(&self) -> Option<usize> {
+        let cur = self.tracks.get(self.at)?;
+        if let Some(cur_start) = cur.start {
+            let mut best: Option<(usize, i64)> = None;
+            for (i, t) in self.tracks.iter().enumerate() {
+                if i == self.at {
+                    continue;
+                }
+                let Some(s) = t.start else { continue };
+                if s <= cur_start {
+                    continue;
+                }
+                if best.is_none_or(|(_, b)| s < b) {
+                    best = Some((i, s));
+                }
+            }
+            if let Some((i, _)) = best {
+                return Some(i);
+            }
+        }
+        // No future timestamp: if at==0 in a newest-first history, there is no
+        // known next track. If at is the tail in oldest-first, no next either.
+        // Try adjacent entries only when they look chronologically newer.
+        for cand in [self.at.checked_sub(1), Some(self.at + 1)] {
+            let Some(i) = cand else { continue };
+            if i >= self.tracks.len() || i == self.at {
+                continue;
+            }
+            let t = &self.tracks[i];
+            match (t.start, cur.start) {
+                (Some(s), Some(cs)) if s > cs => return Some(i),
+                _ => {}
+            }
+        }
+        None
     }
 }
 

@@ -98,27 +98,30 @@ pub(crate) async fn fetch(inner: &DaemonInner, station_id: &str) -> Result<Daemo
     })
 }
 
-/// The title on air and the artist half of it, from a list plus the stream's
-/// ICY `StreamTitle`.
+/// The title on air, artist, and index from a list plus the stream's ICY
+/// `StreamTitle`.
 ///
 /// ICY is authoritative for what is playing, so the artist is read from the
 /// list row that title matches rather than from the list's own leading entry,
 /// which can lag by up to one refresh. A station publishing no ICY metadata
 /// falls back to the leading entry, the same convention the station's own page
 /// uses.
-pub(crate) fn now_split(list: &RadioTracklist, icy: Option<&str>) -> (String, Option<String>) {
+pub(crate) fn now_split(
+    list: &RadioTracklist,
+    icy: Option<&str>,
+) -> (String, Option<String>, usize) {
     let artist = |t: &RadioTrack| Some(t.artist.clone()).filter(|a| !a.is_empty());
     match icy {
         Some(title) if !title.is_empty() => {
             let at = list.match_title(title);
             match list.tracks.get(at) {
-                Some(t) => (title.to_string(), artist(t)),
-                None => (title.to_string(), None),
+                Some(t) => (title.to_string(), artist(t), at),
+                None => (title.to_string(), None, at),
             }
         }
         _ => match list.now() {
-            Some(t) => (t.title.clone(), artist(t)),
-            None => (String::new(), None),
+            Some(t) => (t.title.clone(), artist(t), list.at),
+            None => (String::new(), None, 0),
         },
     }
 }

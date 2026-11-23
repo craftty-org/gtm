@@ -22,6 +22,26 @@ impl App {
         self.podcast.episodes_feed_id = Some(feed_id);
     }
 
+    pub fn fetch_podcast_preview(&mut self, feed_id: String) {
+        if self.podcast.preview_feed_id.as_deref() == Some(feed_id.as_str()) {
+            return;
+        }
+        self.podcast.preview_feed_id = Some(feed_id.clone());
+        self.podcast.preview_episodes.clear();
+        let c = self.client.clone();
+        let ipc_tx = self.ipc_tx.clone();
+        tokio::spawn(async move {
+            match c.podcast().episodes(&feed_id).await {
+                Ok((_title, eps)) => {
+                    let _ = ipc_tx.send(IpcResult::PodcastEpisodes(feed_id, eps));
+                }
+                Err(e) => {
+                    self_err(&ipc_tx, format!("podcast preview failed: {e}"));
+                }
+            }
+        });
+    }
+
     /// Search the public podcast directory.
     ///
     /// Separate from the subscription list on purpose: these are results to
@@ -146,6 +166,49 @@ impl App {
         self.pickers.top().is_some_and(|t| {
             t.id == crate::picker::PickerId::PodcastFeeds && t.query.trim().is_empty()
         })
+    }
+
+    pub fn open_podcast_timestamps(&mut self) {
+        if let Some(ep) = self.current_podcast_episode() {
+            self.podcast.timestamps = ep.timestamps.clone();
+            self.podcast.timestamps_title = ep.title.clone();
+            self.pickers.open(PickerId::PodcastTimestamps);
+            return;
+        }
+        if let Some((feed_id, _idx, _title)) = self.current_podcast_path() {
+            self.podcast.timestamps_pending = true;
+            if self.podcast.episodes_feed_id.as_deref() != Some(feed_id.as_str()) {
+                self.fetch_podcast_episodes(feed_id);
+            }
+            return;
+        }
+        if !self.podcast.timestamps.is_empty() {
+            self.pickers.open(PickerId::PodcastTimestamps);
+            return;
+        }
+        self.notify_typed(
+            "Podcast",
+            "No timestamps available for this episode",
+            NotificationKind::Info,
+            false,
+            NotifType::Podcast,
+        );
+    }
+
+    fn current_podcast_episode(&self) -> Option<PodcastEpisode> {
+        let (feed_id, idx, _) = self.current_podcast_path()?;
+        if self.podcast.episodes_feed_id.as_deref() == Some(feed_id.as_str()) {
+            return self.podcast.episodes.get(idx).cloned();
+        }
+        None
+    }
+
+    fn current_podcast_path(&self) -> Option<(String, usize, String)> {
+        let track = self.state.current_track.as_ref()?;
+        let rest = track.path.strip_prefix("podcast://")?;
+        let (feed_id, idx_s) = rest.rsplit_once('/')?;
+        let idx: usize = idx_s.parse().ok()?;
+        Some((feed_id.to_string(), idx, track.title.clone()))
     }
 
     /// Load the subscribed feed list, and the directory status alongside it.

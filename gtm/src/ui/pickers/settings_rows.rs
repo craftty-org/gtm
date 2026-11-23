@@ -65,6 +65,7 @@ pub(crate) const SYSTEM_ROWS: SettingsRows = &[
     ("Clear Cover Cache", RowKind::Action),
     ("Notification Settings", RowKind::Action),
     ("Show Welcome", RowKind::Toggle),
+    ("Notify New Releases", RowKind::Toggle),
     // The daemon outlives the client, so this one decides whether starting it
     // starts the music. Off by default: nobody asked the machine to make noise
     // just because they opened a socket.
@@ -115,7 +116,8 @@ pub(crate) fn row_help(category: usize, option: usize) -> &'static str {
         (1, 15) => " Clear the downloaded cover art cache.",
         (1, 16) => " Press Enter to open notification settings.",
         (1, 17) => " Show the welcome pane at launch. H on it clears this too.",
-        (1, 18) => {
+        (1, 18) => " Notify when a newer GitHub release is available.",
+        (1, 19) => {
             " Let the daemon resume playing when it starts. Off: the last \
 track is restored paused instead."
         }
