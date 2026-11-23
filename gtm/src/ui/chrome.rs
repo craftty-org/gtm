@@ -2465,69 +2465,69 @@ impl Render {
                     right_inner,
                 )
             };
-            if hero_rect.height > 0 {
-                if let Some(ref ht) = hero_track {
-                    app.fetch_hero_cover(&ht.artist, &ht.title);
-                    let art_w = (hero_rect.height * 2)
-                        .min(hero_rect.width.saturating_sub(24))
-                        .max(10);
-                    let art_rect = Rect {
-                        x: hero_rect.x + 1,
-                        y: hero_rect.y,
-                        width: art_w,
-                        height: hero_rect.height.saturating_sub(1),
-                    };
-                    Render::cover(
-                        f,
-                        art_rect,
-                        app.hero_cover_stateful.as_mut(),
-                        app.hero_cover.as_deref(),
-                        app.theme.fg_dim,
-                        Some("\u{266b}"),
-                    );
-                    let tx = art_rect.x + art_rect.width + 2;
-                    let tw = hero_rect.width.saturating_sub(art_rect.width + 4);
-                    let mut tlines = Vec::new();
+            if hero_rect.height > 0
+                && let Some(ref ht) = hero_track
+            {
+                app.fetch_hero_cover(&ht.artist, &ht.title);
+                let art_w = (hero_rect.height * 2)
+                    .min(hero_rect.width.saturating_sub(24))
+                    .max(10);
+                let art_rect = Rect {
+                    x: hero_rect.x + 1,
+                    y: hero_rect.y,
+                    width: art_w,
+                    height: hero_rect.height.saturating_sub(1),
+                };
+                Render::cover(
+                    f,
+                    art_rect,
+                    app.hero_cover_stateful.as_mut(),
+                    app.hero_cover.as_deref(),
+                    app.theme.fg_dim,
+                    Some("\u{266b}"),
+                );
+                let tx = art_rect.x + art_rect.width + 2;
+                let tw = hero_rect.width.saturating_sub(art_rect.width + 4);
+                let mut tlines = Vec::new();
+                tlines.push(Line::from(Span::styled(
+                    "Last played",
+                    Style::default().fg(app.theme.fg_dim),
+                )));
+                tlines.push(Line::from(Span::styled(
+                    ht.title.clone(),
+                    Style::default()
+                        .fg(app.theme.fg_bright)
+                        .add_modifier(Modifier::BOLD),
+                )));
+                let sub = if ht.artist.is_empty() {
+                    ht.album.clone()
+                } else if ht.album.is_empty() {
+                    ht.artist.clone()
+                } else {
+                    format!("{} · {}", ht.artist, ht.album)
+                };
+                if !sub.is_empty() {
                     tlines.push(Line::from(Span::styled(
-                        "Last played",
+                        sub,
+                        Style::default().fg(app.theme.fg),
+                    )));
+                }
+                let dur = format_duration_short(ht.duration as u64);
+                if !dur.is_empty() && dur != "0:00" {
+                    tlines.push(Line::from(Span::styled(
+                        dur,
                         Style::default().fg(app.theme.fg_dim),
                     )));
-                    tlines.push(Line::from(Span::styled(
-                        ht.title.clone(),
-                        Style::default()
-                            .fg(app.theme.fg_bright)
-                            .add_modifier(Modifier::BOLD),
-                    )));
-                    let sub = if ht.artist.is_empty() {
-                        ht.album.clone()
-                    } else if ht.album.is_empty() {
-                        ht.artist.clone()
-                    } else {
-                        format!("{} · {}", ht.artist, ht.album)
-                    };
-                    if !sub.is_empty() {
-                        tlines.push(Line::from(Span::styled(
-                            sub,
-                            Style::default().fg(app.theme.fg),
-                        )));
-                    }
-                    let dur = format_duration_short(ht.duration as u64);
-                    if !dur.is_empty() && dur != "0:00" {
-                        tlines.push(Line::from(Span::styled(
-                            dur,
-                            Style::default().fg(app.theme.fg_dim),
-                        )));
-                    }
-                    f.render_widget(
-                        Paragraph::new(tlines),
-                        Rect {
-                            x: tx,
-                            y: hero_rect.y + 1,
-                            width: tw,
-                            height: hero_rect.height.saturating_sub(2),
-                        },
-                    );
                 }
+                f.render_widget(
+                    Paragraph::new(tlines),
+                    Rect {
+                        x: tx,
+                        y: hero_rect.y + 1,
+                        width: tw,
+                        height: hero_rect.height.saturating_sub(2),
+                    },
+                );
             }
             if app.grid_active() {
                 Render::grid(f, right_inner, app);

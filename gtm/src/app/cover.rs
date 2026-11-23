@@ -391,11 +391,11 @@ impl App {
                 | TrackInfoKind::PodcastFeed
                 | TrackInfoKind::PodcastEpisode
         ) {
-            if kind == TrackInfoKind::PodcastFeed {
-                if let Some(feed) = self.podcast.feeds.get(self.list_pos()) {
-                    let id = feed.id.clone();
-                    self.fetch_podcast_preview(id);
-                }
+            if kind == TrackInfoKind::PodcastFeed
+                && let Some(feed) = self.podcast.feeds.get(self.list_pos())
+            {
+                let id = feed.id.clone();
+                self.fetch_podcast_preview(id);
             }
             self.popup_track_id = None;
             self.fetch_url_cover(self.popup_cover_url());

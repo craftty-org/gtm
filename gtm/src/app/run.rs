@@ -1052,24 +1052,16 @@ impl App {
                             self.podcast.episodes = eps.clone();
                             if self.podcast.timestamps_pending {
                                 self.podcast.timestamps_pending = false;
-                                if let Some(track) = self.state.current_track.as_ref() {
-                                    if let Some(rest) = track.path.strip_prefix("podcast://") {
-                                        if let Some((fid, idx_s)) = rest.rsplit_once('/') {
-                                            if fid == feed_id {
-                                                if let Ok(idx) = idx_s.parse::<usize>() {
-                                                    if let Some(ep) = self.podcast.episodes.get(idx)
-                                                    {
-                                                        self.podcast.timestamps =
-                                                            ep.timestamps.clone();
-                                                        self.podcast.timestamps_title =
-                                                            ep.title.clone();
-                                                        self.pickers
-                                                            .open(PickerId::PodcastTimestamps);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                                if let Some(track) = self.state.current_track.as_ref()
+                                    && let Some(rest) = track.path.strip_prefix("podcast://")
+                                    && let Some((fid, idx_s)) = rest.rsplit_once('/')
+                                    && fid == feed_id
+                                    && let Ok(idx) = idx_s.parse::<usize>()
+                                    && let Some(ep) = self.podcast.episodes.get(idx)
+                                {
+                                    self.podcast.timestamps = ep.timestamps.clone();
+                                    self.podcast.timestamps_title = ep.title.clone();
+                                    self.pickers.open(PickerId::PodcastTimestamps);
                                 }
                             }
                         }

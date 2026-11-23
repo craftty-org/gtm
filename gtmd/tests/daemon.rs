@@ -164,13 +164,12 @@ async fn daemon_handle() -> (tokio::task::JoinHandle<()>, DaemonConfig) {
 
     // Deterministic-ish readiness: poll for socket instead of fixed sleep.
     for _ in 0..200 {
-        if config.socket_path.exists() {
-            if tokio::net::UnixStream::connect(&config.socket_path)
+        if config.socket_path.exists()
+            && tokio::net::UnixStream::connect(&config.socket_path)
                 .await
                 .is_ok()
-            {
-                return (handle, config);
-            }
+        {
+            return (handle, config);
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
