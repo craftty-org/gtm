@@ -41,7 +41,7 @@ pub(crate) fn build_keybindings(
     static WARNINGS: std::sync::LazyLock<Vec<String>> =
         std::sync::LazyLock::new(default_clash_warnings);
     for w in WARNINGS.iter() {
-        eprintln!("gtm: built-in keybinding clash: {}", w);
+        tracing::warn!("gtm: built-in keybinding clash: {}", w);
     }
 
     if overrides.is_empty() {
@@ -54,14 +54,14 @@ pub(crate) fn build_keybindings(
         let key = match parse_key_event(key_str) {
             Some(k) => k,
             None => {
-                eprintln!("gtm: unknown key \"{}\" in config keybindings", key_str);
+                tracing::warn!("gtm: unknown key \"{}\" in config keybindings", key_str);
                 continue;
             }
         };
         let action = match KeyboardAction::from_name(action_str) {
             Some(a) => a,
             None => {
-                eprintln!(
+                tracing::warn!(
                     "gtm: unknown action \"{}\" in config keybindings",
                     action_str
                 );
@@ -82,7 +82,7 @@ pub(crate) fn build_keybindings(
 
     let warnings = detect_clashes(&user_bindings);
     for w in &warnings {
-        eprintln!("gtm: keybinding clash: {}", w);
+        tracing::warn!("gtm: keybinding clash: {}", w);
     }
 
     defaults

@@ -251,11 +251,21 @@ impl App {
                             .library()
                             .scan(audio_dir.to_string_lossy().as_ref())
                             .await;
-                        // Also refresh the track cache
-                        if let Ok(DaemonRes::Tracks { tracks, .. }) =
-                            client2.library().get_tracks(None, None).await
-                        {
-                            let _ = ipc.send(IpcResult::LibraryTracks(*tracks));
+                        // Scan runs async; poll until the downloaded file appears.
+                        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+                        loop {
+                            if let Ok(DaemonRes::Tracks { tracks, .. }) =
+                                client2.library().get_tracks(None, None).await
+                            {
+                                let found = tracks.iter().any(|t| t.path.contains(&file_path));
+                                let _ = ipc.send(IpcResult::LibraryTracks(*tracks));
+                                if found || std::time::Instant::now() > deadline {
+                                    break;
+                                }
+                            } else if std::time::Instant::now() > deadline {
+                                break;
+                            }
+                            tokio::time::sleep(Duration::from_millis(500)).await;
                         }
                         // Try to fetch lyrics for the newly downloaded track
                         if let Ok(DaemonRes::Tracks { tracks, .. }) =

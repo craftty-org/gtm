@@ -358,7 +358,10 @@ pub async fn start(
                         let _ = cmd_req_tx.send(DaemonReq::PlayPause);
                     }
                     UserCommand::Play => {
-                        let _ = cmd_req_tx.send(DaemonReq::PlayPause);
+                        let playing = cmd_state.read().await.status == PlaybackStatus::Playing;
+                        if !playing {
+                            let _ = cmd_req_tx.send(DaemonReq::PlayPause);
+                        }
                     }
                     UserCommand::Pause => {
                         let _ = cmd_req_tx.send(DaemonReq::Pause);

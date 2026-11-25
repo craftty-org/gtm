@@ -346,7 +346,7 @@ impl CoverCache {
     /// shape a radio station publishes. Cached in the album caches under the
     /// query itself, so a track that comes round again is served from disk
     /// without a second search.
-    pub async fn get_text(&mut self, query: &str, provider: CoverProvider) -> Option<CoverData> {
+    pub async fn get_text(&self, query: &str, provider: CoverProvider) -> Option<CoverData> {
         let q = query.trim();
         if q.is_empty() {
             return None;
@@ -435,13 +435,8 @@ impl CoverCache {
         Some(self.disk_path(&Self::url_key(url)))
     }
 
-    /// Return cached bytes for `url`, fetching and persisting them on a miss.
-    /// `fetch` is only called when neither memory nor disk has the image.
-    pub async fn get_url<F, Fut>(&self, url: &str, fetch: F) -> Option<CoverData>
-    where
-        F: FnOnce() -> Fut,
-        Fut: std::future::Future<Output = Option<Vec<u8>>>,
-    {
+    /// Return cached bytes for `url` without network.
+    pub async fn get_url_cached(&self, url: &str) -> Option<CoverData> {
         if url.trim().is_empty() {
             return None;
         }
@@ -470,8 +465,17 @@ impl CoverCache {
             );
             return Some(cd);
         }
-        let raw = fetch().await?;
-        let data = Self::normalize(&raw).unwrap_or(raw);
+        None
+    }
+
+    /// Persist fetched URL bytes into memory and disk cache.
+    pub async fn put_url(&self, url: &str, bytes: Vec<u8>) {
+        if url.trim().is_empty() {
+            return;
+        }
+        let key = Self::url_key(url);
+        let disk = self.disk_path(&key);
+        let data = Self::normalize(&bytes).unwrap_or(bytes);
         let cd = CoverData {
             mime: "image/jpeg".to_string(),
             data: data.clone(),
@@ -483,13 +487,31 @@ impl CoverCache {
             &self.memory_bytes,
             MEMORY_BUDGET_BYTES,
             key,
-            cd.clone(),
+            cd,
         );
-        Some(cd)
+    }
+
+    /// Return cached bytes for `url`, fetching and persisting them on a miss.
+    /// `fetch` is only called when neither memory nor disk has the image.
+    pub async fn get_url<F, Fut>(&self, url: &str, fetch: F) -> Option<CoverData>
+    where
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Option<Vec<u8>>>,
+    {
+        if let Some(cd) = self.get_url_cached(url).await {
+            return Some(cd);
+        }
+        let raw = fetch().await?;
+        self.put_url(url, raw.clone()).await;
+        let data = Self::normalize(&raw).unwrap_or(raw);
+        Some(CoverData {
+            mime: "image/jpeg".to_string(),
+            data,
+        })
     }
 
     pub async fn get(
-        &mut self,
+        &self,
         artist: &str,
         album: &str,
         provider: CoverProvider,
@@ -590,7 +612,7 @@ impl CoverCache {
         })
     }
 
-    pub async fn get_artist_image(&mut self, artist: &str) -> Option<CoverData> {
+    pub async fn get_artist_image(&self, artist: &str) -> Option<CoverData> {
         let artist = if artist.is_empty() {
             return None;
         } else {

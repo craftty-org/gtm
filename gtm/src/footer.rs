@@ -96,6 +96,7 @@ pub enum FooterModule {
     Time,
     Multiselect,
     Download,
+    Scan,
     Network,
     Source,
 }
@@ -122,6 +123,7 @@ impl FooterModule {
             FooterModule::Time => "Time",
             FooterModule::Multiselect => "Multiselect",
             FooterModule::Download => "Download",
+            FooterModule::Scan => "Scan",
             FooterModule::Network => "Network",
             FooterModule::Source => "Source",
         }
@@ -149,6 +151,7 @@ impl FooterModule {
             "Time" => FooterModule::Time,
             "Multiselect" => FooterModule::Multiselect,
             "Download" => FooterModule::Download,
+            "Scan" => FooterModule::Scan,
             "Network" => FooterModule::Network,
             "Source" => FooterModule::Source,
             _ => return None,
@@ -184,6 +187,7 @@ pub fn presets() -> Vec<FooterPreset> {
                 FooterModule::Notification,
                 FooterModule::SleepTimer,
                 FooterModule::Download,
+                FooterModule::Scan,
             ],
             right: vec![
                 FooterModule::Queue,
@@ -218,6 +222,8 @@ pub fn presets() -> Vec<FooterPreset> {
                 FooterModule::Progress,
                 FooterModule::KeyAction,
                 FooterModule::SleepTimer,
+                FooterModule::Download,
+                FooterModule::Scan,
             ],
             right: vec![
                 FooterModule::Queue,
@@ -526,6 +532,17 @@ impl Footer {
         Some(out)
     }
 
+    fn scan(app: &App) -> Option<String> {
+        let s = app.library_scan.as_ref()?;
+        let icon = if use_nerd_fonts() { "\u{f002} " } else { "" };
+        let pct = if s.total > 0 {
+            (s.scanned as f64 / s.total as f64 * 100.0).clamp(0.0, 100.0)
+        } else {
+            0.0
+        };
+        Some(format!("{icon}Scan {}/{} {:.0}%", s.scanned, s.total, pct))
+    }
+
     fn format_rate(bytes_per_sec: f64) -> String {
         const KB: f64 = 1024.0;
         const MB: f64 = KB * 1024.0;
@@ -829,6 +846,7 @@ fn module_color(m: FooterModule, theme: &AppTheme) -> Color {
         FooterModule::Time => theme.tertiary_accent,
         FooterModule::Multiselect => theme.warning,
         FooterModule::Download => theme.secondary_accent,
+        FooterModule::Scan => theme.secondary_accent,
         FooterModule::Network => theme.secondary_accent,
         FooterModule::Source => theme.tertiary_accent,
     }
@@ -854,6 +872,7 @@ fn module_text(m: FooterModule, app: &App) -> Option<String> {
         FooterModule::Time => Footer::time(app),
         FooterModule::Multiselect => Footer::multiselect(app),
         FooterModule::Download => Footer::download(app),
+        FooterModule::Scan => Footer::scan(app),
         FooterModule::Network => Footer::network(app),
         FooterModule::Source => Footer::source(app),
     }

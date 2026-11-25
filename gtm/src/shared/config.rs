@@ -22,7 +22,7 @@ pub fn discord_id(toml: Option<&toml::Value>) -> Option<String> {
     };
     let id = raw.trim();
     if id.is_empty() || !id.chars().all(|c| c.is_ascii_digit()) {
-        eprintln!("gtmd: ignoring discord_app_id {id:?}: expected a numeric application id");
+        tracing::warn!("gtmd: ignoring discord_app_id {id:?}: expected a numeric application id");
         return None;
     }
     Some(id.to_string())

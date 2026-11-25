@@ -427,6 +427,7 @@ impl App {
             let mut had_track_change = false;
             let mut had_sleep_expired = false;
             let mut had_sync_done = false;
+            let mut had_library_scan_done = false;
             let mut had_spotify_change = false;
             let mut had_lastfm_change = false;
             for ev in self.client.drain().await {
@@ -524,6 +525,44 @@ impl App {
                     && data.get("kind").is_some_and(|k| k == "metadata")
                 {
                     had_sync_done = true;
+                }
+                if let DaemonEvent::Custom { name, .. } = &ev
+                    && name == "library_changed"
+                {
+                    had_library_scan_done = true;
+                }
+                if let DaemonEvent::LibraryScanProgress { scanned, total, path } = &ev {
+                    self.library_scan = Some(crate::app::state::LibraryScanProgressView {
+                        scanned: *scanned,
+                        total: *total,
+                        path: path.clone(),
+                    });
+                }
+                if let DaemonEvent::LibraryScanDone { added, total, error } = &ev {
+                    self.library_scan = None;
+                    if let Some(err) = error {
+                        self.notify_typed(
+                            "Library scan failed",
+                            err.clone(),
+                            NotificationKind::Error,
+                            false,
+                            NotifType::System,
+                        );
+                    } else {
+                        let msg = if *total == 0 {
+                            "No audio files found".to_string()
+                        } else {
+                            format!("Scan complete: {added} added ({total} files)")
+                        };
+                        self.notify_typed(
+                            "Library scan",
+                            msg,
+                            NotificationKind::Success,
+                            false,
+                            NotifType::System,
+                        );
+                        had_library_scan_done = true;
+                    }
                 }
                 events_received = true;
             }
@@ -637,6 +676,14 @@ impl App {
             {
                 self.tracks_cache = *tracks;
                 self.tracks_cache_gen = self.tracks_cache_gen.wrapping_add(1);
+            }
+            if had_library_scan_done
+                && let Ok(DaemonRes::Tracks { tracks, .. }) =
+                    self.client.library().get_tracks(None, None).await
+            {
+                self.tracks_cache = *tracks;
+                self.tracks_cache_gen = self.tracks_cache_gen.wrapping_add(1);
+                self.data_dirty = true;
             }
 
             if had_spotify_change {

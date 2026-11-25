@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.99] - 2026-11-25
+
+### 🐛 Fixed
+- **Library scan no longer freezes the UI.** Scan runs in background, emits progress/done events, and the client shows scan progress and refreshes library entries on completion.
+- **MPRIS Play** no longer toggles pause when already playing, fixing headset/desktop Play control behavior.
+- **Embedded cover extraction/rendering** falls back to reading embedded cover art from audio files when `cover_path`/sidecar is missing, restoring cover display and reactive theming.
+- **Desktop classification** updated with `AudioVideo;Audio;Music;Player;` categories and audio MIME types for Linux Mint/desktop menus.
+- **Playback hang sources reduced** by avoiding cover cache outer-lock hold during URL fetches and by running embedded cover extraction off async workers. Runtime config/keybinding warnings are logged through tracing.
+
 ## [0.2.97] - 2026-11-08
 
 ### ✨ Added

@@ -365,6 +365,8 @@ impl DaemonState {
             | DaemonEvent::ProviderError { .. }
             | DaemonEvent::ReactivePalette { .. }
             | DaemonEvent::ReactiveTheme(_)
+            | DaemonEvent::LibraryScanProgress { .. }
+            | DaemonEvent::LibraryScanDone { .. }
             | DaemonEvent::Heartbeat => {}
         }
         self.commit();

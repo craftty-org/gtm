@@ -1866,6 +1866,21 @@ pub enum DaemonEvent {
     /// per-client polarity is not available without a protocol change.
     #[serde(rename = "reactive_theme")]
     ReactiveTheme(Box<crate::shared::theme::ReactiveTheme>),
+    /// Library scan progress: emitted periodically while scanning.
+    #[serde(rename = "library_scan_progress")]
+    LibraryScanProgress {
+        scanned: u64,
+        total: u64,
+        path: String,
+    },
+    /// Library scan finished (success or error reported in `error`).
+    #[serde(rename = "library_scan_done")]
+    LibraryScanDone {
+        added: u64,
+        total: u64,
+        #[serde(default)]
+        error: Option<String>,
+    },
     #[serde(rename = "heartbeat")]
     Heartbeat,
 }

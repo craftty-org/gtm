@@ -9,21 +9,78 @@ impl LibraryHandler {
     ) -> Result<DaemonRes, CoreError> {
         let res = match action {
             LibraryAction::Scan { path } => {
+                if inner.scan_progress.running.load(Ordering::Acquire) {
+                    return Ok(DaemonRes::Error {
+                        message: "a library scan is already running".into(),
+                    });
+                }
+                inner.scan_progress.running.store(true, Ordering::Release);
+                inner.scan_progress.scanned.store(0, Ordering::Relaxed);
+                inner.scan_progress.total.store(0, Ordering::Relaxed);
                 let audio_dir = path.clone();
                 let data_dir = inner.config.data_dir.clone();
                 let cache_dir = inner.config.cache_dir.to_string_lossy().to_string();
-                let result = tokio::task::spawn_blocking(move || {
-                    let lib = Library::open(&data_dir)?;
-                    lib.scan_directory(&audio_dir, true, Some(&cache_dir))
-                })
-                .await
-                .map_err(|e| CoreError::Daemon(e.to_string()))?;
-                match result {
-                    Ok(tracks) => DaemonRes::Tracks {
-                        tracks: Box::new(tracks),
-                    },
-                    Err(e) => DaemonRes::Error { message: e },
-                }
+                let progress = inner.scan_progress.clone();
+                let event_tx = inner.event_tx.clone();
+                let state = inner.state.clone();
+                tokio::spawn(async move {
+                    let _ = event_tx.send(DaemonEvent::LibraryScanProgress {
+                        scanned: 0,
+                        total: 0,
+                        path: audio_dir.clone(),
+                    });
+                    let progress_bg = progress.clone();
+                    let event_tx_bg = event_tx.clone();
+                    let audio_dir_bg = audio_dir.clone();
+                    let result = tokio::task::spawn_blocking(move || {
+                        let lib = Library::open(&data_dir)?;
+                        lib.scan_directory(&audio_dir_bg, true, Some(&cache_dir), |scanned, total, p| {
+                            progress_bg.scanned.store(scanned, Ordering::Relaxed);
+                            progress_bg.total.store(total, Ordering::Relaxed);
+                            let _ = event_tx_bg.send(DaemonEvent::LibraryScanProgress {
+                                scanned: scanned as u64,
+                                total: total as u64,
+                                path: p.to_string(),
+                            });
+                        })
+                    })
+                    .await;
+                    let (added, total, error) = match result {
+                        Ok(Ok(tracks)) => {
+                            let added = tracks.len() as u64;
+                            let total = progress.total.load(Ordering::Relaxed) as u64;
+                            let mut s = state.write().await;
+                            for t in &tracks {
+                                if !s.default_list.iter().any(|x| x.path == t.path) {
+                                    s.default_list.push(t.clone());
+                                }
+                            }
+                            drop(s);
+                            (added, total, None)
+                        }
+                        Ok(Err(e)) => {
+                            warn!("library scan failed: {e}");
+                            (0, 0, Some(e))
+                        }
+                        Err(e) => {
+                            warn!("library scan task failed: {e}");
+                            (0, 0, Some(e.to_string()))
+                        }
+                    };
+                    progress.running.store(false, Ordering::Release);
+                    let _ = event_tx.send(DaemonEvent::LibraryScanDone {
+                        added,
+                        total,
+                        error: error.clone(),
+                    });
+                    if error.is_none() {
+                        let _ = event_tx.send(DaemonEvent::Custom {
+                            name: "library_changed".into(),
+                            data: Default::default(),
+                        });
+                    }
+                });
+                DaemonRes::Ok
             }
             LibraryAction::GetTracks { filter: _, sort: _ } => {
                 let data_dir = inner.config.data_dir.clone();

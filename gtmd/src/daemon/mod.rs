@@ -2074,6 +2074,7 @@ pub(crate) struct DaemonInner {
     /// so it cannot move into the detached task.
     pub(crate) scrobble: std::sync::Arc<tokio::sync::Mutex<ScrobbleTracker>>,
     pub(crate) sync_progress: Arc<SyncProgress>,
+    pub(crate) scan_progress: Arc<ScanProgress>,
 }
 
 impl DaemonInner {
@@ -2574,6 +2575,7 @@ impl Daemon {
             play_history: tokio::sync::Mutex::new(Vec::new()),
             scrobble: std::sync::Arc::new(tokio::sync::Mutex::new(ScrobbleTracker::default())),
             sync_progress: Arc::new(SyncProgress::default()),
+            scan_progress: Arc::new(ScanProgress::default()),
         });
 
         // The only chart provider left is the free, no-auth iTunes feed, so it
@@ -3265,7 +3267,7 @@ impl Daemon {
         data_dir: std::path::PathBuf,
         cache_dir: std::path::PathBuf,
         _req_tx: mpsc::UnboundedSender<(ClientId, u64, DaemonReq, ReplyTx)>,
-        _event_tx: broadcast::Sender<DaemonEvent>,
+        event_tx: broadcast::Sender<DaemonEvent>,
         health: Arc<HealthTracker>,
     ) {
         if library_paths.is_empty() {
@@ -3281,12 +3283,20 @@ impl Daemon {
             let data_dir = data_dir.clone();
             let cache_dir_str = cache_dir.to_string_lossy().to_string();
             let total = total_tracks.clone();
+            let event_tx_bg = event_tx.clone();
             let result = tokio::task::spawn_blocking(move || {
                 let lib = match Library::open(&data_dir) {
                     Ok(l) => l,
                     Err(e) => return Err(format!("Library::new: {e}")),
                 };
-                lib.scan_directory(&audio_dir_str, true, Some(&cache_dir_str))
+                let tx = event_tx_bg.clone();
+                lib.scan_directory(&audio_dir_str, true, Some(&cache_dir_str), move |scanned, total, p| {
+                    let _ = tx.send(DaemonEvent::LibraryScanProgress {
+                        scanned: scanned as u64,
+                        total: total as u64,
+                        path: p.to_string(),
+                    });
+                })
                     .map_err(|e| format!("scan: {e}"))
             })
             .await;
@@ -3298,26 +3308,49 @@ impl Daemon {
                 Ok(Err(e)) => {
                     health.scan.errors.fetch_add(1, Ordering::Relaxed);
                     warn!("auto-scan {:?} failed: {e}", audio_dir);
+                    let _ = event_tx.send(DaemonEvent::LibraryScanDone {
+                        added: 0,
+                        total: 0,
+                        error: Some(e),
+                    });
                     continue;
                 }
                 Err(e) => {
                     health.scan.errors.fetch_add(1, Ordering::Relaxed);
                     warn!("auto-scan task panicked for {:?}: {e}", audio_dir);
+                    let _ = event_tx.send(DaemonEvent::LibraryScanDone {
+                        added: 0,
+                        total: 0,
+                        error: Some(e.to_string()),
+                    });
                     continue;
                 }
             };
             let count = tracks.len();
             if count == 0 {
                 info!("auto-scan found no new tracks in {:?}", audio_dir);
-                continue;
+            } else {
+                info!("auto-scanned {} track(s) from {:?}", count, audio_dir);
+                total.fetch_add(count, std::sync::atomic::Ordering::Relaxed);
+                let mut s = state.write().await;
+                for track in &tracks {
+                    if !s.default_list.iter().any(|x| x.path == track.path) {
+                        s.default_list.push(track.clone());
+                    }
+                }
+                drop(s);
             }
-            info!("auto-scanned {} track(s) from {:?}", count, audio_dir);
-            total.fetch_add(count, std::sync::atomic::Ordering::Relaxed);
-            let mut s = state.write().await;
-            for track in &tracks {
-                s.queue.push(track.clone());
+            let _ = event_tx.send(DaemonEvent::LibraryScanDone {
+                added: count as u64,
+                total: count as u64,
+                error: None,
+            });
+            if count > 0 {
+                let _ = event_tx.send(DaemonEvent::Custom {
+                    name: "library_changed".into(),
+                    data: Default::default(),
+                });
             }
-            drop(s);
         }
     }
 

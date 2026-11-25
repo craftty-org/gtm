@@ -144,6 +144,19 @@ impl Cover {
             let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
             return Ok(DaemonRes::CoverArt { data: Some(b64) });
         }
+        let mut embedded = None;
+        if let Some(p) = track_path {
+            embedded = Self::embedded_cover(p).await;
+        }
+        if embedded.is_none() {
+            if let Some(ref t) = library_track {
+                embedded = Self::embedded_cover(&t.path).await;
+            }
+        }
+        if let Some(bytes) = embedded {
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            return Ok(DaemonRes::CoverArt { data: Some(b64) });
+        }
 
         // A queued entry can already know its artwork: the spotify resolver
         // points `cover_path` at the album art the web API handed us. Serve
@@ -511,32 +524,30 @@ impl Cover {
     /// image reuses the same disk store as every other cover.
     ///
     /// Requests for the same URL are serialized, so the second one is a cache
-    /// hit instead of a second download. The whole cover cache is one mutex, so
-    /// without this every queued request fetched again before the first could
-    /// store its result: a single cursor sweep asked for the same chart art
-    /// from the preloader and from the card, and paid for both.
+    /// hit instead of a second download.
     async fn url_cover(inner: &DaemonInner, url: &str) -> Option<Vec<u8>> {
         let gate = Self::url_gate(inner, url).await;
         let hold = gate.lock().await;
-        let hit = {
-            let mut guard = inner.cover_cache().await;
-            match guard.as_mut() {
-                Some(cache) => {
-                    let client = Self::image_client();
-                    cache
-                        .get_url(url, || {
-                            let client = client.clone();
-                            let url = url.to_string();
-                            async move { Self::fetch_image(&client, &url).await }
-                        })
-                        .await
-                }
-                None => None,
+        {
+            let guard = inner.cover_cache().await;
+            if let Some(cache) = guard.as_ref()
+                && let Some(hit) = cache.get_url_cached(url).await
+            {
+                drop(hold);
+                Self::release_gate(inner, url, &gate).await;
+                return Some(hit.data);
             }
-        };
+        }
+        let bytes = Self::fetch_image(Self::image_client(), url).await;
+        if let Some(ref b) = bytes {
+            let guard = inner.cover_cache().await;
+            if let Some(cache) = guard.as_ref() {
+                cache.put_url(url, b.clone()).await;
+            }
+        }
         drop(hold);
         Self::release_gate(inner, url, &gate).await;
-        Some(hit?.data)
+        bytes
     }
 
     /// The gate for one URL, created on first use.
@@ -665,5 +676,33 @@ impl Cover {
             });
         }
         Ok(DaemonRes::CoverArt { data: None })
+    }
+
+    async fn embedded_cover(path: &str) -> Option<Vec<u8>> {
+        let path = path.to_string();
+        tokio::task::spawn_blocking(move || {
+            use lofty::file::TaggedFileExt;
+            use lofty::picture::PictureType;
+
+            let p = std::path::Path::new(&path);
+            if !p.is_file() {
+                return None;
+            }
+            let tagged = lofty::read_from_path(p).ok()?;
+            let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
+            let pic = tag
+                .pictures()
+                .iter()
+                .find(|pic| pic.pic_type() == PictureType::CoverFront)
+                .or_else(|| tag.pictures().first())?;
+            let data = pic.data().to_vec();
+            if CoverCache::too_small(&data) {
+                return None;
+            }
+            Some(data)
+        })
+        .await
+        .ok()
+        .flatten()
     }
 }

@@ -57,6 +57,14 @@ pub struct DownloadProgressView {
     pub updated_at: std::time::Instant,
 }
 
+/// Live state of a daemon-side library scan, surfaced in the footer.
+#[derive(Debug, Clone)]
+pub struct LibraryScanProgressView {
+    pub scanned: u64,
+    pub total: u64,
+    pub path: String,
+}
+
 /// Fuzzy subsequence match: every byte of `q` appears in order in `hay`.
 /// Used by every fuzzy-finder (library search, themes, command palette) so
 /// filtering behaviour is identical across pickers.

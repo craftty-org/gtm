@@ -1,10 +1,12 @@
 [Desktop Entry]
 Name=gtm Music Player
+GenericName=Music Player
 Comment=Feature rich and cross platform terminal audio player
 Exec=gtm
 Icon=gtm
 Terminal=true
 Type=Application
-Categories=Audio;Music;Player;
-Keywords=music;player;terminal;tui;
+Categories=AudioVideo;Audio;Music;Player;
+Keywords=music;player;audio;terminal;tui;
+MimeType=audio/mpeg;audio/flac;audio/ogg;audio/x-wav;audio/aac;audio/mp4;audio/x-opus;audio/webm;audio/x-vorbis+ogg;
 StartupNotify=false

@@ -557,6 +557,8 @@ pub struct App {
     /// Live download progress (keyed by daemon download id), surfaced in the
     /// footer Download module.
     pub downloads: std::collections::HashMap<u64, DownloadProgressView>,
+    /// Live library scan progress, surfaced in the footer.
+    pub library_scan: Option<LibraryScanProgressView>,
     /// URLs with a download in flight. Kept so the YT search list can render
     /// "Download started" inline on the row (the toast is only for the
     /// finished event). Cleared when a terminal status arrives.
@@ -1588,6 +1590,7 @@ impl App {
             browse_title: None,
             yt_results_cache: Vec::new(),
             downloads: std::collections::HashMap::new(),
+            library_scan: None,
             downloading_urls: std::collections::HashSet::new(),
             playlist_cache: Vec::new(),
             most_played_cache: Vec::new(),

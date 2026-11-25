@@ -908,12 +908,16 @@ impl Library {
         Ok(())
     }
 
-    pub fn scan_directory(
+    pub fn scan_directory<F>(
         &self,
         dir: &str,
         recursive: bool,
         cache_dir: Option<&str>,
-    ) -> Result<Vec<TrackInfo>, String> {
+        mut progress: F,
+    ) -> Result<Vec<TrackInfo>, String>
+    where
+        F: FnMut(usize, usize, &str),
+    {
         let mut added = Vec::new();
         // Stored paths are opened later with no memory of the scanning cwd, so
         // they have to be absolute; a relative `dir` used to produce rows that
@@ -929,20 +933,24 @@ impl Library {
             walkdir::WalkDir::new(dir).max_depth(1).follow_links(true)
         };
 
-        for entry in walk.into_iter().filter_map(|e| e.ok()) {
-            if !entry.file_type().is_file() {
-                continue;
-            }
-            let ext = entry
-                .path()
-                .extension()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
-            if !extensions.contains(&ext.to_lowercase().as_str()) {
-                continue;
-            }
-            let path = entry.path().to_string_lossy().to_string();
-            match self.add_track(&path, cache_dir) {
+        let files: Vec<String> = walk
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .filter_map(|e| {
+                let ext = e.path().extension().and_then(|s| s.to_str()).unwrap_or("");
+                if extensions.contains(&ext.to_lowercase().as_str()) {
+                    Some(e.path().to_string_lossy().to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let total = files.len();
+        progress(0, total, "");
+        for (i, path) in files.iter().enumerate() {
+            progress(i + 1, total, path);
+            match self.add_track(path, cache_dir) {
                 Ok(t) => added.push(t),
                 Err(e) => warn!("skip {path}: {e}"),
             }

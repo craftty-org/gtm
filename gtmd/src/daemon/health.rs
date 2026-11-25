@@ -64,3 +64,19 @@ impl Default for SyncProgress {
         }
     }
 }
+
+pub(crate) struct ScanProgress {
+    pub(crate) running: AtomicBool,
+    pub(crate) scanned: AtomicUsize,
+    pub(crate) total: AtomicUsize,
+}
+
+impl Default for ScanProgress {
+    fn default() -> Self {
+        Self {
+            running: AtomicBool::new(false),
+            scanned: AtomicUsize::new(0),
+            total: AtomicUsize::new(0),
+        }
+    }
+}
