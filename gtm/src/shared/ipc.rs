@@ -9,7 +9,7 @@ use crate::shared::chart::{ChartPlaylist, ChartSource, ChartTrack};
 use crate::shared::global::{DaemonState, EqPreset, RepeatMode, YTFilter};
 use crate::shared::playlist::PlaylistFormatKind;
 use crate::shared::podcast::{PodcastEpisode, PodcastFeed, PodcastResult, PodcastStatus};
-use crate::shared::radio::{RadioCountry, RadioStation, RadioTag, RadioTracklist};
+use crate::shared::radio::{RadioCountry, RadioStation, RadioTag, RadioTrack, RadioTracklist};
 use crate::shared::spotify::{SpotifyPlaylist, SpotifyStatus, SpotifyTrack};
 use crate::shared::track::{LrcData, Playlist, TrackInfo, YTSearchResult};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -207,6 +207,11 @@ pub enum LibraryAction {
     UpdateMetadata {
         track_id: i64,
         patch: MetadataPatch,
+    },
+    /// Save radio tracklist entries to a local playlist named after the station.
+    SaveRadioTracks {
+        station: String,
+        tracks: Vec<RadioTrack>,
     },
 }
 

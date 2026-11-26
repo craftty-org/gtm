@@ -695,4 +695,63 @@ impl App {
             }
         }
     }
+
+    pub(crate) fn save_radio_tracklist(&mut self, all: bool) {
+        let tracks = self.state.radio_tracks.tracks.clone();
+        if tracks.is_empty() {
+            self.notify_typed(
+                "Radio",
+                "No tracklist to save",
+                NotificationKind::Info,
+                false,
+                NotifType::NowPlaying,
+            );
+            return;
+        }
+        let station = self
+            .state
+            .current_track
+            .as_ref()
+            .and_then(|t| {
+                t.path
+                    .strip_prefix("radio://")
+                    .and_then(|s| s.splitn(3, '/').nth(1))
+                    .filter(|s| !s.trim().is_empty())
+                    .map(|s| s.to_string())
+                    .or_else(|| {
+                        let name = t.title.trim();
+                        (!name.is_empty()).then(|| name.to_string())
+                    })
+            })
+            .unwrap_or_else(|| "Radio".to_string());
+        let selected = self.pickers.top().map_or(0, |o| o.selected);
+        let to_save = if all {
+            tracks
+        } else {
+            tracks.get(selected.min(tracks.len() - 1)).cloned().into_iter().collect()
+        };
+        let c = self.client.clone();
+        let ipc = self.ipc_tx.clone();
+        let label = if all { "tracklist" } else { "track" };
+        tokio::spawn(async move {
+            match c.library().save_radio_tracks(&station, to_save).await {
+                Ok(_) => {
+                    let _ = ipc.send(IpcResult::Notification(
+                        "Radio".into(),
+                        format!("Saved {label} to playlist \"{station}\""),
+                        NotificationKind::Success,
+                        NotifType::NowPlaying,
+                    ));
+                }
+                Err(e) => {
+                    let _ = ipc.send(IpcResult::Notification(
+                        "Radio".into(),
+                        format!("Save failed: {e}"),
+                        NotificationKind::Error,
+                        NotifType::NowPlaying,
+                    ));
+                }
+            }
+        });
+    }
 }

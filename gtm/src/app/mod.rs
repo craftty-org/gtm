@@ -423,6 +423,7 @@ pub struct App {
     /// Changelog lines shown in the welcome window.
     pub(crate) welcome_changelog: Vec<String>,
     pub(crate) welcome_scroll: usize,
+    pub(crate) about_scroll: usize,
     /// Cover for the track the station plays next, and its protocol.
     ///
     /// Its own slot rather than the now playing pane's because that one is
@@ -1552,6 +1553,7 @@ impl App {
             notify_new_release: prefs.notify_new_release,
             welcome_changelog: load_welcome_changelog(),
             welcome_scroll: 0,
+            about_scroll: 0,
             resume_on_start: prefs.resume_on_start,
             preview_hover: None,
             preview_since: None,

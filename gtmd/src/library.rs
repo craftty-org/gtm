@@ -22,6 +22,7 @@ use tracing::warn;
 
 use gtm::shared::MetadataPatch;
 use gtm::shared::playlist::{M3u8Format, PlaylistFormat, PlaylistFormatKind, PlsFormat};
+use gtm::shared::radio::RadioTrack;
 use gtm::shared::track::{Playlist, TrackInfo};
 
 use crate::cleaner::{clean_filename_stem, sanitize_text};
@@ -605,6 +606,68 @@ impl Library {
             .map_err(|e| format!("add to playlist: {e}"))?;
         self.write_m3u8(playlist_id);
         Ok(())
+    }
+
+    pub fn save_radio_tracks(
+        &self,
+        station: &str,
+        tracks: &[RadioTrack],
+    ) -> Result<Playlist, String> {
+        let name = station.trim();
+        if name.is_empty() {
+            return Err("station name is empty".into());
+        }
+        let playlist = if let Ok(id) = self.conn.query_row(
+            "SELECT id FROM playlists WHERE name = ?1 LIMIT 1",
+            params![name],
+            |row| row.get::<_, i64>(0),
+        ) {
+            self.get_playlist(id)?
+                .ok_or_else(|| "playlist not found".to_string())?
+        } else {
+            self.create_playlist(name)?
+        };
+
+        for rt in tracks {
+            let title = rt.title.trim();
+            if title.is_empty() {
+                continue;
+            }
+            let artist = rt.artist.trim();
+            let key = format!("{name}\n{artist}\n{title}");
+            let mut hasher = Sha256::new();
+            hasher.update(key.as_bytes());
+            let hash = hex::encode(hasher.finalize());
+            let path = format!("radio-saved://{hash}");
+            let track_id = if let Some(existing) = self.track_by_path(&path)? {
+                existing.id
+            } else {
+                self.conn
+                    .execute(
+                        "INSERT INTO tracks (path, title, artist, album, duration, track_number, genre, year, bitrate, samplerate, hash, cover_path)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                        params![
+                            path,
+                            title,
+                            artist,
+                            name,
+                            rt.duration.unwrap_or(0) as f64,
+                            Option::<i32>::None,
+                            "Radio",
+                            Option::<i32>::None,
+                            Option::<i32>::None,
+                            Option::<i32>::None,
+                            hash,
+                            rt.art.clone(),
+                        ],
+                    )
+                    .map_err(|e| format!("insert radio track: {e}"))?;
+                self.conn.last_insert_rowid()
+            };
+            self.add_to_playlist(playlist.id, track_id)?;
+        }
+        self.get_playlist(playlist.id)?
+            .ok_or_else(|| "playlist not found".to_string())
     }
 
     pub fn remove_from_playlist(&self, playlist_id: i64, track_id: i64) -> Result<(), String> {

@@ -765,6 +765,21 @@ impl<'a> Library<'a> {
             .await
     }
 
+    pub async fn save_radio_tracks(
+        &self,
+        station: &str,
+        tracks: Vec<crate::shared::radio::RadioTrack>,
+    ) -> Result<Vec<track::Playlist>> {
+        self.client
+            .send_playlists(DaemonReq::Library {
+                action: LibraryAction::SaveRadioTracks {
+                    station: station.into(),
+                    tracks,
+                },
+            })
+            .await
+    }
+
     pub async fn import_playlist(
         &self,
         path: &str,

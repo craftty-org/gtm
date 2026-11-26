@@ -164,6 +164,36 @@ impl App {
         }
         // If an picker is open, Esc closes it; keys pass through to picker
         if self.pickers.is_open() {
+            if self.pickers.top().is_some_and(|o| o.id == PickerId::About) {
+                let max = self.welcome_changelog.len().saturating_sub(1);
+                match key.code {
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        self.about_scroll = (self.about_scroll + 1).min(max);
+                        return true;
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.about_scroll = self.about_scroll.saturating_sub(1);
+                        return true;
+                    }
+                    KeyCode::PageDown => {
+                        self.about_scroll = (self.about_scroll + 10).min(max);
+                        return true;
+                    }
+                    KeyCode::PageUp => {
+                        self.about_scroll = self.about_scroll.saturating_sub(10);
+                        return true;
+                    }
+                    KeyCode::Home | KeyCode::Char('g') => {
+                        self.about_scroll = 0;
+                        return true;
+                    }
+                    KeyCode::End | KeyCode::Char('G') => {
+                        self.about_scroll = max;
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
             return match key.code {
                 KeyCode::Esc => {
                     if self
@@ -1550,15 +1580,9 @@ impl App {
                             self.open_podcast_subscribe();
                             return true;
                         }
-                        // Read-only for the whole time a station is on air.
+                        // Save selected radio tracklist entry to station playlist.
                         if !self.live_queue().is_empty() {
-                            self.notify_typed(
-                                "System",
-                                Self::RADIO_QUEUE_LOCKED,
-                                NotificationKind::Info,
-                                false,
-                                NotifType::NowPlaying,
-                            );
+                            self.save_radio_tracklist(false);
                             return true;
                         }
                         if !self.library_pane_focus {
@@ -1632,6 +1656,10 @@ impl App {
                         }
                     }
                     Some(KeyboardAction::AddToPlaylist) => {
+                        if !self.live_queue().is_empty() {
+                            self.save_radio_tracklist(true);
+                            return true;
+                        }
                         if !self.library_pane_focus {
                             // Playlist overview rows have no tracks of their
                             // own: open the playlist first.
@@ -4509,6 +4537,20 @@ impl App {
                         // command that happened to open a tab.
                         PickerId::About if c == 's' => {
                             open_url(crate::ui::bigtext::REPO, &self.ipc_tx);
+                        }
+                        PickerId::About if c == 'j' => {
+                            let max = self.welcome_changelog.len().saturating_sub(1);
+                            self.about_scroll = (self.about_scroll + 1).min(max);
+                        }
+                        PickerId::About if c == 'k' => {
+                            self.about_scroll = self.about_scroll.saturating_sub(1);
+                        }
+                        PickerId::About if c == 'g' => {
+                            self.about_scroll = 0;
+                        }
+                        PickerId::About if c == 'G' => {
+                            let max = self.welcome_changelog.len().saturating_sub(1);
+                            self.about_scroll = max;
                         }
                         _ => {}
                     }

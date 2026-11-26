@@ -27,11 +27,8 @@ impl Pickers {
         // make room for the logo.
         const FULL: crate::ui::bigtext::PixelSize = crate::ui::bigtext::PixelSize::Full;
         const HALF: crate::ui::bigtext::PixelSize = crate::ui::bigtext::PixelSize::HalfHeight;
-        // The star hint is a line of this block now, not a bottom strip: it is
-        // part of what this window says rather than a running commentary on it,
-        // and the strip it came from is gone.
         let text_rows: u16 = 7;
-        let size = if inner.height >= 8 + 1 + text_rows {
+        let size = if inner.height >= 8 + 1 + text_rows + 8 {
             FULL
         } else {
             HALF
@@ -43,13 +40,11 @@ impl Pickers {
                 Constraint::Length(mark_h),
                 Constraint::Length(1),
                 Constraint::Length(text_rows),
+                Constraint::Min(0),
             ])
             .split(inner);
         crate::ui::bigtext::logo(f, rows[0], app, size);
 
-        // Everything textual under the mark as one block, so the gaps are lines
-        // of the block rather than rows of an outer layout that most of happen to
-        // be blank.
         let dim = Style::default().fg(app.theme.fg_dim);
         let accent = Style::default()
             .fg(app.theme.accent)
@@ -75,6 +70,9 @@ impl Pickers {
             Line::from(Span::styled("License GPL-3.0", dim)),
         ];
         f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), rows[2]);
+        if rows[3].height > 2 && !app.welcome_changelog.is_empty() {
+            crate::ui::bigtext::render_changelog(f, rows[3], app, app.about_scroll, "Changelog");
+        }
     }
 
     pub(crate) fn render_notifications(f: &mut ratatui::Frame, area: Rect, app: &mut App) {

@@ -149,9 +149,8 @@ impl Pickers {
                 // the footer and the track card already use.
                 (60, 28)
             }
-            // Tall enough for the oversized mark, the lines under it and the
-            // call to action, plus the panel's own chrome.
-            PickerId::About => (52, 24),
+            // Tall enough for the oversized mark, the lines under it and changelog.
+            PickerId::About => (72, 32),
             _ => (56, 22),
         }
     }

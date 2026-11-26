@@ -346,6 +346,125 @@ fn slice(spans: &[Span<'static>], skip: usize, w: usize) -> Vec<Span<'static>> {
     merged
 }
 
+fn md_inline(text: &str, base: Style, theme: &crate::theme::AppTheme) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        if let Some(i) = rest.find("**") {
+            if i > 0 {
+                spans.push(Span::styled(rest[..i].to_string(), base));
+            }
+            rest = &rest[i + 2..];
+            if let Some(end) = rest.find("**") {
+                spans.push(Span::styled(
+                    rest[..end].to_string(),
+                    base.add_modifier(Modifier::BOLD).fg(theme.fg),
+                ));
+                rest = &rest[end + 2..];
+            } else {
+                spans.push(Span::styled("**".to_string(), base));
+            }
+            continue;
+        }
+        if let Some(i) = rest.find('`') {
+            if i > 0 {
+                spans.push(Span::styled(rest[..i].to_string(), base));
+            }
+            rest = &rest[i + 1..];
+            if let Some(end) = rest.find('`') {
+                spans.push(Span::styled(
+                    rest[..end].to_string(),
+                    Style::default().fg(theme.secondary_accent).bg(theme.selection_bg),
+                ));
+                rest = &rest[end + 1..];
+            } else {
+                spans.push(Span::styled("`".to_string(), base));
+            }
+            continue;
+        }
+        spans.push(Span::styled(rest.to_string(), base));
+        break;
+    }
+    if spans.is_empty() {
+        spans.push(Span::raw(String::new()));
+    }
+    spans
+}
+
+pub(crate) fn md_line(line: &str, theme: &crate::theme::AppTheme) -> Line<'static> {
+    let t = line.trim_end();
+    if t.starts_with("### ") {
+        let text = &t[4..];
+        return Line::from(vec![
+            Span::styled("### ".to_string(), Style::default().fg(theme.fg_dim)),
+            Span::styled(
+                text.to_string(),
+                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+            ),
+        ]);
+    }
+    if t.starts_with("## ") {
+        let text = &t[3..];
+        return Line::from(vec![
+            Span::styled("▌ ".to_string(), Style::default().fg(theme.accent)),
+            Span::styled(
+                text.to_string(),
+                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+            ),
+        ]);
+    }
+    if t.starts_with("# ") {
+        let text = &t[2..];
+        return Line::from(vec![
+            Span::styled("█ ".to_string(), Style::default().fg(theme.accent)),
+            Span::styled(
+                text.to_string(),
+                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            ),
+        ]);
+    }
+    if let Some(rest) = t.strip_prefix("- ").or_else(|| t.strip_prefix("* ")) {
+        let mut spans = vec![Span::styled("  • ".to_string(), Style::default().fg(theme.secondary_accent))];
+        spans.extend(md_inline(rest, Style::default().fg(theme.fg), theme));
+        return Line::from(spans);
+    }
+    if t.trim().is_empty() {
+        return Line::from("");
+    }
+    if t.chars().all(|c| c == '-' || c == '=' || c == ' ') && t.len() >= 3 {
+        return Line::from(Span::styled("─".repeat(24), Style::default().fg(theme.fg_dim)));
+    }
+    Line::from(md_inline(t, Style::default().fg(theme.fg_dim), theme))
+}
+
+pub(crate) fn render_changelog(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    app: &crate::app::App,
+    scroll: usize,
+    title: &str,
+) {
+    let block = Block::default()
+        .borders(Borders::TOP)
+        .title(Line::from(Span::styled(
+            format!(" {title} (j/k to scroll) "),
+            Style::default().fg(app.theme.accent).add_modifier(Modifier::BOLD),
+        )))
+        .border_style(Style::default().fg(app.theme.fg_dim));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    let max = app.welcome_changelog.len().saturating_sub(1);
+    let scroll = scroll.min(max);
+    let lines: Vec<Line> = app
+        .welcome_changelog
+        .iter()
+        .skip(scroll)
+        .take(inner.height as usize)
+        .map(|l| md_line(l, &app.theme))
+        .collect();
+    f.render_widget(Paragraph::new(lines), inner);
+}
+
 /// The first-run onboarding view: a floating pane over the library, drawn with
 /// the same chrome as every picker.
 ///
@@ -461,40 +580,7 @@ pub(crate) fn onboard(f: &mut ratatui::Frame, area: Rect, app: &App) {
             Paragraph::new(hint_line).alignment(Alignment::Center),
             split[0],
         );
-        let ch_area = split[1];
-        let title = Line::from(Span::styled(
-            " Changelog (j/k to scroll) ",
-            Style::default()
-                .fg(app.theme.accent)
-                .add_modifier(Modifier::BOLD),
-        ));
-        let block = Block::default()
-            .borders(Borders::TOP)
-            .title(title)
-            .border_style(Style::default().fg(app.theme.fg_dim));
-        let ch_inner = block.inner(ch_area);
-        f.render_widget(block, ch_area);
-        let max = app.welcome_changelog.len().saturating_sub(1);
-        let scroll = app.welcome_scroll.min(max);
-        let lines: Vec<Line> = app
-            .welcome_changelog
-            .iter()
-            .skip(scroll)
-            .take(ch_inner.height as usize)
-            .map(|l| {
-                let style = if l.starts_with('#') {
-                    Style::default()
-                        .fg(app.theme.accent)
-                        .add_modifier(Modifier::BOLD)
-                } else if l.starts_with("- ") || l.starts_with("* ") {
-                    Style::default().fg(app.theme.fg)
-                } else {
-                    Style::default().fg(app.theme.fg_dim)
-                };
-                Line::from(Span::styled(l.clone(), style))
-            })
-            .collect();
-        f.render_widget(Paragraph::new(lines), ch_inner);
+        render_changelog(f, split[1], app, app.welcome_scroll, "Changelog");
     } else if rows[5].height > 0 {
         f.render_widget(
             Paragraph::new(hint_line).alignment(Alignment::Center),

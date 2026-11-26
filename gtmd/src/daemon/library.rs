@@ -445,6 +445,23 @@ impl LibraryHandler {
                     Err(e) => DaemonRes::Error { message: e },
                 }
             }
+            LibraryAction::SaveRadioTracks { station, tracks } => {
+                let station = station.clone();
+                let tracks = tracks.clone();
+                let data_dir = inner.config.data_dir.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    let lib = Library::open(&data_dir)?;
+                    lib.save_radio_tracks(&station, &tracks)
+                })
+                .await
+                .map_err(|e| CoreError::Daemon(e.to_string()))?;
+                match result {
+                    Ok(playlist) => DaemonRes::Playlists {
+                        playlists: vec![playlist],
+                    },
+                    Err(e) => DaemonRes::Error { message: e },
+                }
+            }
         };
         Ok(res)
     }

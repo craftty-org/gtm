@@ -163,7 +163,7 @@ impl Pickers {
     /// between the listener and the station.
     fn render_live(f: &mut ratatui::Frame, area: Rect, app: &mut App) {
         let sel = app.pickers.top().map_or(0, |o| o.selected);
-        let block = Self::picker_panel(app, " Tracklist ");
+        let block = Self::picker_panel(app, " Tracklist  a:save  A:save all ");
         let inner = block.inner(area);
         f.render_widget(block, area);
 

@@ -5229,6 +5229,7 @@ impl Daemon {
             }
         }
         if !due {
+            Self::bump_radio_track(inner).await;
             return;
         }
         let Some(station) = station else { return };
@@ -5251,6 +5252,55 @@ impl Daemon {
         list.at = at;
         state.radio_tracks = list.clone();
         state.radio_artist = artist.clone();
+        drop(state);
+        Self::push_event(
+            inner,
+            DaemonEvent::RadioTracksChanged {
+                list: Box::new(list),
+                artist,
+            },
+        );
+    }
+
+    async fn bump_radio_track(inner: &Arc<DaemonInner>) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        if now <= 0 {
+            return;
+        }
+        let mut state = inner.state.write().await;
+        if state.radio_tracks.tracks.is_empty() {
+            return;
+        }
+        let mut changed = false;
+        for _ in 0..8 {
+            let at = state.radio_tracks.at;
+            let Some(cur) = state.radio_tracks.tracks.get(at) else { break; };
+            let Some(start) = cur.start else { break; };
+            let dur = cur.duration.unwrap_or(210) as i64;
+            if now < start + dur + 3 {
+                break;
+            }
+            let Some(next) = state.radio_tracks.next_index() else { break; };
+            if next == at {
+                break;
+            }
+            state.radio_tracks.at = next;
+            changed = true;
+        }
+        if !changed {
+            return;
+        }
+        let at = state.radio_tracks.at;
+        let artist = state
+            .radio_tracks
+            .tracks
+            .get(at)
+            .and_then(|tr| (!tr.artist.is_empty()).then(|| tr.artist.clone()));
+        state.radio_artist = artist.clone();
+        let list = state.radio_tracks.clone();
         drop(state);
         Self::push_event(
             inner,

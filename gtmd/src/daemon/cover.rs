@@ -109,11 +109,18 @@ impl Cover {
         };
         if let Some(ref track) = library_track
             && let Some(ref path) = track.cover_path
-            && let Ok(data) = tokio::fs::read(path).await
-            && !CoverCache::too_small(&data)
         {
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
-            return Ok(DaemonRes::CoverArt { data: Some(b64) });
+            if path.starts_with("http://") || path.starts_with("https://") {
+                if let Some(bytes) = Self::url_cover(inner, path).await {
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                    return Ok(DaemonRes::CoverArt { data: Some(b64) });
+                }
+            } else if let Ok(data) = tokio::fs::read(path).await
+                && !CoverCache::too_small(&data)
+            {
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
+                return Ok(DaemonRes::CoverArt { data: Some(b64) });
+            }
         }
         if let Some(ref track) = library_track {
             if let Some(sidecar) = audio_sidecar(&track.path)
@@ -195,12 +202,18 @@ impl Cover {
                 })
             })
         };
-        if let Some(path) = known.as_ref().and_then(|t| t.cover_path.clone())
-            && let Ok(data) = tokio::fs::read(&path).await
-            && !CoverCache::too_small(&data)
-        {
-            let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
-            return Ok(DaemonRes::CoverArt { data: Some(b64) });
+        if let Some(path) = known.as_ref().and_then(|t| t.cover_path.clone()) {
+            if path.starts_with("http://") || path.starts_with("https://") {
+                if let Some(bytes) = Self::url_cover(inner, &path).await {
+                    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                    return Ok(DaemonRes::CoverArt { data: Some(b64) });
+                }
+            } else if let Ok(data) = tokio::fs::read(&path).await
+                && !CoverCache::too_small(&data)
+            {
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
+                return Ok(DaemonRes::CoverArt { data: Some(b64) });
+            }
         }
 
         // A row the resolver labelled also carries the album-art URL it was
