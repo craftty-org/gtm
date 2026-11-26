@@ -1,0 +1,57 @@
+name: Dispatch Release to automata
+
+on:
+  push:
+    branches: ["dev"]
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "Release type"
+        required: false
+        default: "stable"
+        type: choice
+        options:
+          - stable
+          - nightly
+      version:
+        description: "Release version (e.g. 0.1.2) for stable releases"
+        required: false
+        type: string
+      bench_seconds:
+        description: "Benchmark sampling window in seconds (CI default 15)"
+        required: false
+        default: "30"
+        type: string
+
+concurrency:
+  group: dispatch-release-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to automata
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATA_DISPATCH_TOKEN }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/craftty-org/automata/dispatches" \
+            -d "$(jq -n \
+              --arg type gtm-release \
+              --arg repo "${{ github.repository }}" \
+              --arg sha "${{ github.sha }}" \
+              --arg ref "${{ github.ref }}" \
+              --arg event "${{ github.event_name }}" \
+              --arg actor "${{ github.actor }}" \
+              --arg release_type "${{ github.event.inputs.release_type || '' }}" \
+              --arg version "${{ github.event.inputs.version || '' }}" \
+              --arg bench_seconds "${{ github.event.inputs.bench_seconds || '30' }}" \
+              --arg commit_message "$COMMIT_MESSAGE" \
+              '{event_type:$type, client_payload:{repo:$repo, sha:$sha, ref:$ref, event_name:$event, actor:$actor, inputs:{release_type:$release_type, version:$version, bench_seconds:$bench_seconds}, commit_message:$commit_message}}')"
