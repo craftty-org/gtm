@@ -12,3 +12,5 @@ DIRECTORY.md
 .bench/*
 !.bench/BENCHMARK.md
 !.bench/stats.json
+
+PROMPT
