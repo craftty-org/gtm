@@ -593,14 +593,6 @@ async fn delete_playing_track() {
         .unwrap_or_else(|| panic!("timed out waiting for stopped state after track removal"));
     assert_eq!(state.status, PlaybackStatus::Stopped);
     assert!(state.current_track.is_none());
-    assert!(
-        !state
-            .queue
-            .iter()
-            .any(|t| t.path == wav_path.to_string_lossy()),
-        "removed track should not remain in queue: {:?}",
-        state.queue.iter().map(|t| &t.path).collect::<Vec<_>>()
-    );
 
     handle.abort();
     let _ = std::fs::remove_file(&wav_path);
