@@ -19,21 +19,40 @@ pub fn read_daemon_pid() -> Option<u32> {
     raw.trim().parse::<u32>().ok()
 }
 
-/// Whether a PID is currently alive, via `kill(pid, 0)` (returns 0 for a
-/// running process, `ESRCH` for a dead one).
+/// Whether a PID is currently alive.
 pub fn pid_is_alive(pid: u32) -> bool {
     if pid == 0 {
         return false;
     }
+    #[cfg(unix)]
     // SAFETY: `kill` with signal 0 only probes for existence and never
     // delivers a signal.
-    unsafe { libc::kill(pid as i32, 0) == 0 }
+    unsafe {
+        libc::kill(pid as i32, 0) == 0
+    }
+    #[cfg(not(unix))]
+    {
+        std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()))
+            .unwrap_or(false)
+    }
 }
 
-/// Terminate a daemon process, escalating from SIGTERM to SIGKILL.
+/// Terminate a daemon process.
 pub fn terminate_daemon(pid: u32) {
+    #[cfg(unix)]
     // SAFETY: well-formed pid/signal passed to the OS kill syscall.
-    unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+    unsafe {
+        libc::kill(pid as i32, libc::SIGTERM);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T"])
+            .output();
+    }
 }
 
 /// Locate the `gtmd` daemon binary: next to the current executable, on
@@ -123,8 +142,17 @@ pub async fn ensure_daemon_running(socket_path: &Path) -> Result<(), String> {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
         if pid_is_alive(pid) {
+            #[cfg(unix)]
             // SAFETY: well-formed pid/signal passed to the OS kill syscall.
-            unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+            unsafe {
+                libc::kill(pid as i32, libc::SIGKILL);
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = std::process::Command::new("taskkill")
+                    .args(["/PID", &pid.to_string(), "/T", "/F"])
+                    .output();
+            }
         }
     }
 
