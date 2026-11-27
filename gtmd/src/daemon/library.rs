@@ -398,10 +398,7 @@ impl LibraryHandler {
                         };
                         let mut state = inner.state.write().await;
                         state.queue.retain(|t| !matches_removed(t));
-                        let was_current = state
-                            .current_track
-                            .as_ref()
-                            .is_some_and(|t| matches_removed(t));
+                        let was_current = state.current_track.as_ref().is_some_and(matches_removed);
                         drop(state);
                         if was_current {
                             Daemon::stop_playback(inner).await;
