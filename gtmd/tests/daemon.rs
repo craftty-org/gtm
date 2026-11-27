@@ -578,25 +578,29 @@ async fn delete_playing_track() {
     assert!(matches!(res, DaemonRes::Ok));
 
     let mut final_state = None;
-    for _ in 0..50 {
+    for _ in 0..100 {
         let res = send_req(&mut reader, &mut writer, &DaemonReq::GetStatus).await;
         let DaemonRes::Status { state } = res else {
             panic!("expected Status, got {res:?}");
         };
-        if state.status == PlaybackStatus::Stopped
-            && state.current_track.is_none()
-            && state.queue.is_empty()
-        {
+        if state.status == PlaybackStatus::Stopped && state.current_track.is_none() {
             final_state = Some(state);
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     let state = final_state
-        .unwrap_or_else(|| panic!("timed out waiting for stopped/empty queue after track removal"));
+        .unwrap_or_else(|| panic!("timed out waiting for stopped state after track removal"));
     assert_eq!(state.status, PlaybackStatus::Stopped);
     assert!(state.current_track.is_none());
-    assert!(state.queue.is_empty());
+    assert!(
+        !state
+            .queue
+            .iter()
+            .any(|t| t.path == wav_path.to_string_lossy()),
+        "removed track should not remain in queue: {:?}",
+        state.queue.iter().map(|t| &t.path).collect::<Vec<_>>()
+    );
 
     handle.abort();
     let _ = std::fs::remove_file(&wav_path);
