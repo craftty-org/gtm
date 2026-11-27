@@ -87,28 +87,36 @@ pub fn find_gtmd_binary() -> Result<std::path::PathBuf, String> {
 /// Send a `ping` wire frame and wait briefly for a reply. Returns `true` when
 /// a live daemon answers.
 async fn ping_socket(socket_path: &Path, timeout: std::time::Duration) -> bool {
-    let Ok(mut stream) = tokio::net::UnixStream::connect(socket_path).await else {
-        return false;
-    };
-    let Ok(ping) = serde_json::to_string(&WireReq {
-        id: 0,
-        cmd: "ping".to_string(),
-        params: serde_json::to_value(DaemonReq::Ping).unwrap_or_default(),
-    }) else {
-        return false;
-    };
-    let mut buf = [0u8; 256];
-    if stream
-        .write_all(format!("{ping}\n").as_bytes())
-        .await
-        .is_err()
+    #[cfg(unix)]
     {
-        return false;
+        let Ok(mut stream) = tokio::net::UnixStream::connect(socket_path).await else {
+            return false;
+        };
+        let Ok(ping) = serde_json::to_string(&WireReq {
+            id: 0,
+            cmd: "ping".to_string(),
+            params: serde_json::to_value(DaemonReq::Ping).unwrap_or_default(),
+        }) else {
+            return false;
+        };
+        let mut buf = [0u8; 256];
+        if stream
+            .write_all(format!("{ping}\n").as_bytes())
+            .await
+            .is_err()
+        {
+            return false;
+        }
+        matches!(
+            tokio::time::timeout(timeout, stream.read(&mut buf)).await,
+            Ok(Ok(n)) if n > 0
+        )
     }
-    matches!(
-        tokio::time::timeout(timeout, stream.read(&mut buf)).await,
-        Ok(Ok(n)) if n > 0
-    )
+    #[cfg(not(unix))]
+    {
+        let _ = (socket_path, timeout);
+        false
+    }
 }
 
 /// Ensure a live daemon answers at `socket_path`, spawning `gtmd` detached

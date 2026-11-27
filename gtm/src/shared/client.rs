@@ -12,7 +12,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+#[cfg(unix)]
 use tokio::net::UnixStream;
 use tokio::sync::{Mutex, mpsc, oneshot};
 
@@ -74,9 +75,19 @@ impl DaemonClient {
         let path = path.as_ref().to_owned();
         let mut last_err = None;
         for i in 0..10 {
-            match UnixStream::connect(&path).await {
-                Ok(stream) => {
-                    let (reader, writer) = stream.into_split();
+            #[cfg(unix)]
+            let connect_res = UnixStream::connect(&path).await.map(|stream| {
+                let (reader, writer) = stream.into_split();
+                (Box::new(reader) as IpcRead, Box::new(writer) as IpcWrite)
+            });
+            #[cfg(not(unix))]
+            let connect_res: std::io::Result<(IpcRead, IpcWrite)> = Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "unix socket IPC is not supported on this platform",
+            ));
+
+            match connect_res {
+                Ok((reader, writer)) => {
                     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
                     let events: Arc<Mutex<Vec<DaemonEvent>>> = Arc::new(Mutex::new(Vec::new()));
                     let connected = Arc::new(AtomicBool::new(true));
@@ -110,15 +121,20 @@ impl DaemonClient {
                     connected.store(true, Ordering::Release);
 
                     // Connect to pulse socket for dedicated event stream
-                    let pulse_path = {
-                        let mut p = path.clone();
-                        p.set_extension("pulse");
-                        p
-                    };
-                    let events_pulse = events.clone();
-                    tokio::spawn(async move {
-                        pulse_reader(&pulse_path, events_pulse, hb_pulse).await;
-                    });
+                    #[cfg(unix)]
+                    {
+                        let pulse_path = {
+                            let mut p = path.clone();
+                            p.set_extension("pulse");
+                            p
+                        };
+                        let events_pulse = events.clone();
+                        tokio::spawn(async move {
+                            pulse_reader(&pulse_path, events_pulse, hb_pulse).await;
+                        });
+                    }
+                    #[cfg(not(unix))]
+                    let _ = hb_pulse;
 
                     return Ok(client);
                 }
@@ -1963,9 +1979,12 @@ impl<'a> Lyrics<'a> {
     }
 }
 
+type IpcRead = Box<dyn AsyncRead + Unpin + Send>;
+type IpcWrite = Box<dyn AsyncWrite + Unpin + Send>;
+
 struct IpcWorker {
-    reader: tokio::net::unix::OwnedReadHalf,
-    writer: tokio::net::unix::OwnedWriteHalf,
+    reader: IpcRead,
+    writer: IpcWrite,
     cmd_rx: mpsc::UnboundedReceiver<PendingRequest>,
     connected: Arc<AtomicBool>,
     buf: Vec<u8>,
@@ -2083,9 +2102,19 @@ impl IpcWorker {
         loop {
             let delay_ms = (100u64 * 2u64.saturating_pow(attempt.min(10))).min(10_000);
             tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-            match tokio::net::UnixStream::connect(&self.socket_path).await {
-                Ok(stream) => {
-                    let (reader, writer) = stream.into_split();
+            #[cfg(unix)]
+            let connect_res = UnixStream::connect(&self.socket_path).await.map(|stream| {
+                let (reader, writer) = stream.into_split();
+                (Box::new(reader) as IpcRead, Box::new(writer) as IpcWrite)
+            });
+            #[cfg(not(unix))]
+            let connect_res: std::io::Result<(IpcRead, IpcWrite)> = Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "unix socket IPC is not supported on this platform",
+            ));
+
+            match connect_res {
+                Ok((reader, writer)) => {
                     self.reader = reader;
                     self.writer = writer;
                     self.buf.clear();
@@ -2113,7 +2142,7 @@ impl IpcWorker {
     /// at the same time: two `&mut self` borrows cannot coexist in a `select!`,
     /// two disjoint fields can.
     async fn read_frame(
-        reader: &mut tokio::net::unix::OwnedReadHalf,
+        reader: &mut IpcRead,
         buf: &mut Vec<u8>,
         tmp: &mut [u8; 4096],
     ) -> Result<bool> {
@@ -2184,6 +2213,7 @@ impl IpcWorker {
     }
 }
 
+#[cfg(unix)]
 async fn pulse_reader(
     pulse_path: &std::path::Path,
     events: Arc<Mutex<Vec<DaemonEvent>>>,

@@ -10,7 +10,92 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+#[cfg(unix)]
 use tokio::net::{UnixListener, UnixStream};
+#[cfg(not(unix))]
+mod ipc_stub {
+    use std::path::Path;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+
+    pub struct UnixListener;
+    pub struct UnixStream;
+    pub struct OwnedReadHalf;
+    pub struct OwnedWriteHalf;
+
+    impl UnixListener {
+        pub fn bind<P: AsRef<Path>>(_path: P) -> std::io::Result<Self> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "unix sockets not supported on this platform",
+            ))
+        }
+        pub async fn accept(&self) -> std::io::Result<(UnixStream, std::net::SocketAddr)> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "unix sockets not supported on this platform",
+            ))
+        }
+    }
+
+    impl UnixStream {
+        pub fn into_split(self) -> (OwnedReadHalf, OwnedWriteHalf) {
+            (OwnedReadHalf, OwnedWriteHalf)
+        }
+    }
+
+    impl AsyncRead for OwnedReadHalf {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "unsupported",
+            )))
+        }
+    }
+    impl AsyncWrite for OwnedWriteHalf {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "unsupported",
+            )))
+        }
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+    impl AsyncWrite for UnixStream {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "unsupported",
+            )))
+        }
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+}
+#[cfg(not(unix))]
+use ipc_stub::{UnixListener, UnixStream};
 use tokio::sync::{RwLock, broadcast, mpsc};
 use tracing::{debug, error, info, warn};
 
