@@ -508,9 +508,29 @@ async fn delete_playing_track() {
         },
     )
     .await;
-    let DaemonRes::Tracks { tracks } = res else {
-        panic!("expected Tracks, got {res:?}");
-    };
+    assert!(matches!(res, DaemonRes::Ok), "expected Ok, got {res:?}");
+
+    let mut tracks = Vec::new();
+    for _ in 0..50 {
+        let res = send_req(
+            &mut reader,
+            &mut writer,
+            &DaemonReq::Library {
+                action: LibraryAction::GetTracks {
+                    filter: None,
+                    sort: None,
+                },
+            },
+        )
+        .await;
+        if let DaemonRes::Tracks { tracks: t } = res
+            && !t.is_empty()
+        {
+            tracks = *t;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     assert_eq!(tracks.len(), 1);
     let track_id = tracks[0].id;
     assert!(track_id > 0);
