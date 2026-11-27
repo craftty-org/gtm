@@ -155,10 +155,10 @@ impl Cover {
         if let Some(p) = track_path {
             embedded = Self::embedded_cover(p).await;
         }
-        if embedded.is_none() {
-            if let Some(ref t) = library_track {
-                embedded = Self::embedded_cover(&t.path).await;
-            }
+        if embedded.is_none()
+            && let Some(ref t) = library_track
+        {
+            embedded = Self::embedded_cover(&t.path).await;
         }
         if let Some(bytes) = embedded {
             let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);

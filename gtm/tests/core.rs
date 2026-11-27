@@ -4282,10 +4282,6 @@ fn completion_consumers_all_invoke_the_one_generator() {
     // Every consumer that reads the directory must also produce it.
     for (what, path) in [
         ("Makefile", include_str!("../../Makefile")),
-        (
-            "release.yml",
-            include_str!("../../.github/workflows/release.yml"),
-        ),
         ("PKGBUILD", include_str!("../../dist/arch/PKGBUILD")),
         ("gtmd.spec", include_str!("../../dist/rpm/gtmd.spec")),
         (
@@ -4306,37 +4302,11 @@ fn completion_consumers_all_invoke_the_one_generator() {
         }
     }
 
-    // Every family whose packaging copies from the directory must be one the
-    // generate step actually runs for. Android was excluded from it while its
-    // archive still copied the directory, so the copy had nothing to copy.
-    let rel = include_str!("../../.github/workflows/release.yml");
-    let step = |name: &str| {
-        rel.split(&format!("- name: {name}"))
-            .nth(1)
-            .unwrap_or_else(|| panic!("{name} is gone"))
-            .split("run:")
-            .next()
-            .unwrap_or_default()
-            .to_string()
-    };
-    let consumes: Vec<&str> = ["debian", "macos", "arch", "android"].into();
-    let gated = step("Generate shell completions");
-    for family in consumes {
-        assert!(
-            !gated.contains(&format!("matrix.family == '{family}'")),
-            "the generate step excludes {family}, whose packaging copies artifacts/completions"
-        );
-    }
-    // And the two it does exclude generate inside their build containers.
-    for family in ["musl", "arch-arm"] {
-        assert!(
-            gated.contains(&format!("matrix.family != '{family}'")),
-            "the generate step no longer excludes {family}"
-        );
-    }
+    // The old monolithic release.yml was replaced by dispatch-release.yml;
+    // packaging now lives in automata. Container scripts still generate
+    // completions themselves.
     assert!(
-        step("Build musl binaries + packages (Alpine container)").is_empty()
-            || include_str!("../../scripts/build/musl-in-container.sh").contains("completions.sh"),
+        include_str!("../../scripts/build/musl-in-container.sh").contains("completions.sh"),
         "musl generates neither in the workflow nor in its container"
     );
 
@@ -4344,10 +4314,6 @@ fn completion_consumers_all_invoke_the_one_generator() {
     for (what, path) in [
         ("build.rs", include_str!("../build.rs")),
         ("Makefile", include_str!("../../Makefile")),
-        (
-            "release.yml",
-            include_str!("../../.github/workflows/release.yml"),
-        ),
         ("PKGBUILD", include_str!("../../dist/arch/PKGBUILD")),
         ("gtmd.spec", include_str!("../../dist/rpm/gtmd.spec")),
         (

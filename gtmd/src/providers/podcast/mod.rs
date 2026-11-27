@@ -5,8 +5,10 @@
 // This is free software released under the GPL-3.0 license.
 
 use std::collections::HashMap;
-use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
 use futures::StreamExt;
@@ -267,6 +269,7 @@ impl PodcastManager {
     fn save_progress(&self) -> Result<(), String> {
         let raw = serde_json::to_string_pretty(&self.progress).map_err(|e| e.to_string())?;
         std::fs::write(self.progress_path(), raw).map_err(|e| format!("write: {e}"))?;
+        #[cfg(unix)]
         let _ = std::fs::set_permissions(
             self.progress_path(),
             std::fs::Permissions::from_mode(CONFIG_PERMS),
@@ -396,6 +399,7 @@ impl PodcastManager {
     fn save(&self) -> Result<(), String> {
         let raw = serde_json::to_string_pretty(&self.feeds).map_err(|e| e.to_string())?;
         std::fs::write(self.config_path(), raw).map_err(|e| format!("write: {e}"))?;
+        #[cfg(unix)]
         let _ = std::fs::set_permissions(
             self.config_path(),
             std::fs::Permissions::from_mode(CONFIG_PERMS),

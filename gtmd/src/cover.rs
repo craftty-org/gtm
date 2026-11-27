@@ -482,13 +482,7 @@ impl CoverCache {
         };
         self.store_disk(&disk, &data).await;
         let mut mem = self.memory.lock().await;
-        Self::insert_mem(
-            &mut mem,
-            &self.memory_bytes,
-            MEMORY_BUDGET_BYTES,
-            key,
-            cd,
-        );
+        Self::insert_mem(&mut mem, &self.memory_bytes, MEMORY_BUDGET_BYTES, key, cd);
     }
 
     /// Return cached bytes for `url`, fetching and persisting them on a miss.

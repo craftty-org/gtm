@@ -3290,14 +3290,19 @@ impl Daemon {
                     Err(e) => return Err(format!("Library::new: {e}")),
                 };
                 let tx = event_tx_bg.clone();
-                lib.scan_directory(&audio_dir_str, true, Some(&cache_dir_str), move |scanned, total, p| {
-                    let _ = tx.send(DaemonEvent::LibraryScanProgress {
-                        scanned: scanned as u64,
-                        total: total as u64,
-                        path: p.to_string(),
-                    });
-                })
-                    .map_err(|e| format!("scan: {e}"))
+                lib.scan_directory(
+                    &audio_dir_str,
+                    true,
+                    Some(&cache_dir_str),
+                    move |scanned, total, p| {
+                        let _ = tx.send(DaemonEvent::LibraryScanProgress {
+                            scanned: scanned as u64,
+                            total: total as u64,
+                            path: p.to_string(),
+                        });
+                    },
+                )
+                .map_err(|e| format!("scan: {e}"))
             })
             .await;
             let tracks = match result {
@@ -5277,13 +5282,19 @@ impl Daemon {
         let mut changed = false;
         for _ in 0..8 {
             let at = state.radio_tracks.at;
-            let Some(cur) = state.radio_tracks.tracks.get(at) else { break; };
-            let Some(start) = cur.start else { break; };
+            let Some(cur) = state.radio_tracks.tracks.get(at) else {
+                break;
+            };
+            let Some(start) = cur.start else {
+                break;
+            };
             let dur = cur.duration.unwrap_or(210) as i64;
             if now < start + dur + 3 {
                 break;
             }
-            let Some(next) = state.radio_tracks.next_index() else { break; };
+            let Some(next) = state.radio_tracks.next_index() else {
+                break;
+            };
             if next == at {
                 break;
             }
@@ -5821,7 +5832,7 @@ fn run_covers_sync(
         .enable_all()
         .build()
         .map_err(|e| format!("runtime: {e}"))?;
-    let mut cache = CoverCache::new(cache_dir.clone());
+    let cache = CoverCache::new(cache_dir.clone());
     let mut synced = 0usize;
     for track in &tracks {
         let missing_cover = track.cover_path.is_none()

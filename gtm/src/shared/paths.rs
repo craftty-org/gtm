@@ -17,54 +17,72 @@ pub fn is_termux() -> bool {
 /// Return the state directory for runtime files (sockets, PID).
 ///
 /// Resolution order:
-/// 1. `$XDG_RUNTIME_DIR/gtm/`
-/// 2. `/tmp/gtm-$USER/gtm/`
-/// 3. `$TMPDIR/gtm/`
-/// 4. Termux fallback: `$PREFIX/tmp/gtm/`
-/// 5. `$HOME/.gtm/gtm/`
+/// - Windows: `%LOCALAPPDATA%\gtm\run\` (or `%TEMP%\gtm\`)
+/// - Unix:
+///   1. `$XDG_RUNTIME_DIR/gtm/`
+///   2. `/tmp/gtm-$USER/gtm/`
+///   3. `$TMPDIR/gtm/`
+///   4. Termux fallback: `$PREFIX/tmp/gtm/`
+///   5. `$HOME/.gtm/gtm/`
 fn state_dir() -> PathBuf {
-    if let Ok(runtime) = std::env::var("XDG_RUNTIME_DIR") {
-        let p = PathBuf::from(&runtime).join("gtm");
-        if p.parent().is_some_and(|d| d.exists()) {
-            let _ = std::fs::create_dir_all(&p);
-            return p;
-        }
-    }
-    if let Ok(user) = std::env::var("USER") {
-        let p = PathBuf::from("/tmp")
-            .join(format!("gtm-{}", user))
-            .join("gtm");
-        if let Some(parent) = p.parent()
-            && parent.exists()
-        {
-            let _ = std::fs::create_dir_all(&p);
-            return p;
-        }
-    }
-    if let Ok(tmpdir) = std::env::var("TMPDIR") {
-        let p = PathBuf::from(&tmpdir).join("gtm");
-        if p.parent().is_some_and(|d| d.exists()) {
-            let _ = std::fs::create_dir_all(&p);
-            return p;
-        }
-    }
-    if is_termux()
-        && let Ok(prefix) = std::env::var("PREFIX")
+    #[cfg(windows)]
     {
-        let p = PathBuf::from(prefix).join("tmp").join("gtm");
-        if p.parent().is_some_and(|d| d.exists()) {
-            let _ = std::fs::create_dir_all(&p);
-            return p;
-        }
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        let p = PathBuf::from(&home).join(".gtm").join("gtm");
+        let base = std::env::var("LOCALAPPDATA")
+            .or_else(|_| std::env::var("APPDATA"))
+            .ok()
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute())
+            .unwrap_or_else(std::env::temp_dir);
+        let p = base.join("gtm").join("run");
         let _ = std::fs::create_dir_all(&p);
         return p;
     }
-    let p = std::env::temp_dir().join("gtm");
-    let _ = std::fs::create_dir_all(&p);
-    p
+
+    #[cfg(not(windows))]
+    {
+        if let Ok(runtime) = std::env::var("XDG_RUNTIME_DIR") {
+            let p = PathBuf::from(&runtime).join("gtm");
+            if p.parent().is_some_and(|d| d.exists()) {
+                let _ = std::fs::create_dir_all(&p);
+                return p;
+            }
+        }
+        if let Ok(user) = std::env::var("USER") {
+            let p = PathBuf::from("/tmp")
+                .join(format!("gtm-{}", user))
+                .join("gtm");
+            if let Some(parent) = p.parent()
+                && parent.exists()
+            {
+                let _ = std::fs::create_dir_all(&p);
+                return p;
+            }
+        }
+        if let Ok(tmpdir) = std::env::var("TMPDIR") {
+            let p = PathBuf::from(&tmpdir).join("gtm");
+            if p.parent().is_some_and(|d| d.exists()) {
+                let _ = std::fs::create_dir_all(&p);
+                return p;
+            }
+        }
+        if is_termux()
+            && let Ok(prefix) = std::env::var("PREFIX")
+        {
+            let p = PathBuf::from(prefix).join("tmp").join("gtm");
+            if p.parent().is_some_and(|d| d.exists()) {
+                let _ = std::fs::create_dir_all(&p);
+                return p;
+            }
+        }
+        if let Ok(home) = std::env::var("HOME") {
+            let p = PathBuf::from(&home).join(".gtm").join("gtm");
+            let _ = std::fs::create_dir_all(&p);
+            return p;
+        }
+        let p = std::env::temp_dir().join("gtm");
+        let _ = std::fs::create_dir_all(&p);
+        p
+    }
 }
 
 /// Return the default daemon command socket path.

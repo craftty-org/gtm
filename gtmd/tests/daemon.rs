@@ -1,3 +1,5 @@
+#![cfg(unix)]
+
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;

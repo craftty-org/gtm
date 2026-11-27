@@ -374,7 +374,9 @@ fn md_inline(text: &str, base: Style, theme: &crate::theme::AppTheme) -> Vec<Spa
             if let Some(end) = rest.find('`') {
                 spans.push(Span::styled(
                     rest[..end].to_string(),
-                    Style::default().fg(theme.secondary_accent).bg(theme.selection_bg),
+                    Style::default()
+                        .fg(theme.secondary_accent)
+                        .bg(theme.selection_bg),
                 ));
                 rest = &rest[end + 1..];
             } else {
@@ -393,38 +395,44 @@ fn md_inline(text: &str, base: Style, theme: &crate::theme::AppTheme) -> Vec<Spa
 
 pub(crate) fn md_line(line: &str, theme: &crate::theme::AppTheme) -> Line<'static> {
     let t = line.trim_end();
-    if t.starts_with("### ") {
-        let text = &t[4..];
+    if let Some(text) = t.strip_prefix("### ") {
         return Line::from(vec![
             Span::styled("### ".to_string(), Style::default().fg(theme.fg_dim)),
             Span::styled(
                 text.to_string(),
-                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
             ),
         ]);
     }
-    if t.starts_with("## ") {
-        let text = &t[3..];
+    if let Some(text) = t.strip_prefix("## ") {
         return Line::from(vec![
             Span::styled("▌ ".to_string(), Style::default().fg(theme.accent)),
             Span::styled(
                 text.to_string(),
-                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD),
             ),
         ]);
     }
-    if t.starts_with("# ") {
-        let text = &t[2..];
+    if let Some(text) = t.strip_prefix("# ") {
         return Line::from(vec![
             Span::styled("█ ".to_string(), Style::default().fg(theme.accent)),
             Span::styled(
                 text.to_string(),
-                Style::default().fg(theme.accent).add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+                Style::default()
+                    .fg(theme.accent)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             ),
         ]);
     }
     if let Some(rest) = t.strip_prefix("- ").or_else(|| t.strip_prefix("* ")) {
-        let mut spans = vec![Span::styled("  • ".to_string(), Style::default().fg(theme.secondary_accent))];
+        let mut spans = vec![Span::styled(
+            "  • ".to_string(),
+            Style::default().fg(theme.secondary_accent),
+        )];
         spans.extend(md_inline(rest, Style::default().fg(theme.fg), theme));
         return Line::from(spans);
     }
@@ -432,7 +440,10 @@ pub(crate) fn md_line(line: &str, theme: &crate::theme::AppTheme) -> Line<'stati
         return Line::from("");
     }
     if t.chars().all(|c| c == '-' || c == '=' || c == ' ') && t.len() >= 3 {
-        return Line::from(Span::styled("─".repeat(24), Style::default().fg(theme.fg_dim)));
+        return Line::from(Span::styled(
+            "─".repeat(24),
+            Style::default().fg(theme.fg_dim),
+        ));
     }
     Line::from(md_inline(t, Style::default().fg(theme.fg_dim), theme))
 }
@@ -448,7 +459,9 @@ pub(crate) fn render_changelog(
         .borders(Borders::TOP)
         .title(Line::from(Span::styled(
             format!(" {title} (j/k to scroll) "),
-            Style::default().fg(app.theme.accent).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(app.theme.accent)
+                .add_modifier(Modifier::BOLD),
         )))
         .border_style(Style::default().fg(app.theme.fg_dim));
     let inner = block.inner(area);

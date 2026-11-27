@@ -17,6 +17,7 @@ pub mod oauth;
 pub mod stream;
 pub mod ytfb;
 
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -367,6 +368,7 @@ impl SpotifyManager {
             warn!("spotify: could not write the client id: {e}");
             return;
         }
+        #[cfg(unix)]
         if let Err(e) =
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(TOKEN_ACCESS_PERMS))
         {
@@ -400,6 +402,7 @@ impl SpotifyManager {
             warn!("spotify: could not write the oauth port: {e}");
             return;
         }
+        #[cfg(unix)]
         if let Err(e) =
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(TOKEN_ACCESS_PERMS))
         {
@@ -1093,6 +1096,7 @@ impl SpotifyManager {
                 .map_err(|e| CallbackError::CustomizedError(format!("serialize: {e}")))?;
             std::fs::write(&path, &json)
                 .map_err(|e| CallbackError::CustomizedError(format!("write: {e}")))?;
+            #[cfg(unix)]
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(TOKEN_ACCESS_PERMS))
                 .map_err(|e| CallbackError::CustomizedError(format!("chmod: {e}")))?;
             set_secret(key, &json);
@@ -1195,6 +1199,7 @@ impl SpotifyManager {
             std::fs::create_dir_all(dir).map_err(|e| format!("create config dir: {e}"))?;
         }
         std::fs::write(path, json).map_err(|e| format!("write token file: {e}"))?;
+        #[cfg(unix)]
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(TOKEN_ACCESS_PERMS))
             .map_err(|e| format!("set token permissions: {e}"))?;
         Ok(())

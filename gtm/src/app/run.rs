@@ -531,14 +531,24 @@ impl App {
                 {
                     had_library_scan_done = true;
                 }
-                if let DaemonEvent::LibraryScanProgress { scanned, total, path } = &ev {
+                if let DaemonEvent::LibraryScanProgress {
+                    scanned,
+                    total,
+                    path,
+                } = &ev
+                {
                     self.library_scan = Some(crate::app::state::LibraryScanProgressView {
                         scanned: *scanned,
                         total: *total,
                         path: path.clone(),
                     });
                 }
-                if let DaemonEvent::LibraryScanDone { added, total, error } = &ev {
+                if let DaemonEvent::LibraryScanDone {
+                    added,
+                    total,
+                    error,
+                } = &ev
+                {
                     self.library_scan = None;
                     if let Some(err) = error {
                         self.notify_typed(
@@ -2338,14 +2348,21 @@ impl App {
             // Handle Ctrl+Z suspend: leave terminal, SIGTSTP, re-init on resume
             if self.pending_suspend {
                 self.pending_suspend = false;
-                leave_tui();
-                // Suspend: this blocks until SIGCONT
-                unsafe {
-                    libc::raise(libc::SIGTSTP);
+                #[cfg(unix)]
+                {
+                    leave_tui();
+                    // Suspend: this blocks until SIGCONT
+                    unsafe {
+                        libc::raise(libc::SIGTSTP);
+                    }
+                    // Resumed: re-init terminal
+                    enter_tui()?;
+                    terminal.clear()?;
                 }
-                // Resumed: re-init terminal
-                enter_tui()?;
-                terminal.clear()?;
+                #[cfg(not(unix))]
+                {
+                    // No SIGTSTP on non-Unix; just clear the flag.
+                }
             }
         }
         Ok(())

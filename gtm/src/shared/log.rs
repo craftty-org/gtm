@@ -5,8 +5,10 @@
 
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::os::unix::io::AsRawFd;
 use std::sync::OnceLock;
+
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
 
 use chrono::Local;
 
@@ -53,7 +55,8 @@ pub fn log(msg: &str) {
     }
 }
 
-pub fn redirect_stderr() -> std::os::unix::io::RawFd {
+#[cfg(unix)]
+pub fn redirect_stderr() -> i32 {
     let path = log_path();
     let file = match OpenOptions::new().create(true).append(true).open(path) {
         Ok(f) => f,
@@ -65,6 +68,11 @@ pub fn redirect_stderr() -> std::os::unix::io::RawFd {
         libc::dup2(raw, libc::STDERR_FILENO);
     }
     original_fd
+}
+
+#[cfg(not(unix))]
+pub fn redirect_stderr() -> i32 {
+    -1
 }
 
 /// Debug-log each named variable and its value as `name = {:?}`;

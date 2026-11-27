@@ -34,15 +34,20 @@ impl LibraryHandler {
                     let audio_dir_bg = audio_dir.clone();
                     let result = tokio::task::spawn_blocking(move || {
                         let lib = Library::open(&data_dir)?;
-                        lib.scan_directory(&audio_dir_bg, true, Some(&cache_dir), |scanned, total, p| {
-                            progress_bg.scanned.store(scanned, Ordering::Relaxed);
-                            progress_bg.total.store(total, Ordering::Relaxed);
-                            let _ = event_tx_bg.send(DaemonEvent::LibraryScanProgress {
-                                scanned: scanned as u64,
-                                total: total as u64,
-                                path: p.to_string(),
-                            });
-                        })
+                        lib.scan_directory(
+                            &audio_dir_bg,
+                            true,
+                            Some(&cache_dir),
+                            |scanned, total, p| {
+                                progress_bg.scanned.store(scanned, Ordering::Relaxed);
+                                progress_bg.total.store(total, Ordering::Relaxed);
+                                let _ = event_tx_bg.send(DaemonEvent::LibraryScanProgress {
+                                    scanned: scanned as u64,
+                                    total: total as u64,
+                                    path: p.to_string(),
+                                });
+                            },
+                        )
                     })
                     .await;
                     let (added, total, error) = match result {

@@ -715,7 +715,7 @@ impl App {
             .and_then(|t| {
                 t.path
                     .strip_prefix("radio://")
-                    .and_then(|s| s.splitn(3, '/').nth(1))
+                    .and_then(|s| s.split('/').nth(1))
                     .filter(|s| !s.trim().is_empty())
                     .map(|s| s.to_string())
                     .or_else(|| {
@@ -728,7 +728,11 @@ impl App {
         let to_save = if all {
             tracks
         } else {
-            tracks.get(selected.min(tracks.len() - 1)).cloned().into_iter().collect()
+            tracks
+                .get(selected.min(tracks.len() - 1))
+                .cloned()
+                .into_iter()
+                .collect()
         };
         let c = self.client.clone();
         let ipc = self.ipc_tx.clone();
