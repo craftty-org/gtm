@@ -577,23 +577,24 @@ async fn delete_playing_track() {
     .await;
     assert!(matches!(res, DaemonRes::Ok));
 
-    let mut status = PlaybackStatus::Playing;
+    let mut final_state = None;
     for _ in 0..50 {
         let res = send_req(&mut reader, &mut writer, &DaemonReq::GetStatus).await;
         let DaemonRes::Status { state } = res else {
             panic!("expected Status, got {res:?}");
         };
-        if state.status == PlaybackStatus::Stopped {
-            status = state.status;
+        if state.status == PlaybackStatus::Stopped
+            && state.current_track.is_none()
+            && state.queue.is_empty()
+        {
+            final_state = Some(state);
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    let res = send_req(&mut reader, &mut writer, &DaemonReq::GetStatus).await;
-    let DaemonRes::Status { state } = res else {
-        panic!("expected Status, got {res:?}");
-    };
-    assert_eq!(status, PlaybackStatus::Stopped);
+    let state = final_state
+        .unwrap_or_else(|| panic!("timed out waiting for stopped/empty queue after track removal"));
+    assert_eq!(state.status, PlaybackStatus::Stopped);
     assert!(state.current_track.is_none());
     assert!(state.queue.is_empty());
 
