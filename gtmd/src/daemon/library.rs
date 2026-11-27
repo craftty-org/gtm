@@ -389,11 +389,11 @@ impl LibraryHandler {
                 match result {
                     Ok(Some(removed_path)) => {
                         let mut state = inner.state.write().await;
-                        state.queue.retain(|t| t.path != removed_path);
+                        state.queue.retain(|t| t.id != id && t.path != removed_path);
                         let was_current = state
                             .current_track
                             .as_ref()
-                            .is_some_and(|t| t.path == removed_path);
+                            .is_some_and(|t| (id > 0 && t.id == id) || t.path == removed_path);
                         drop(state);
                         if was_current {
                             Daemon::stop_playback(inner).await;
