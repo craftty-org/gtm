@@ -114,8 +114,31 @@ async fn ping_socket(socket_path: &Path, timeout: std::time::Duration) -> bool {
     }
     #[cfg(not(unix))]
     {
-        let _ = (socket_path, timeout);
-        false
+        let pipe_name = crate::shared::paths::ipc_pipe_name(socket_path);
+        let mut client =
+            match tokio::net::windows::named_pipe::ClientOptions::new().open(&pipe_name) {
+                Ok(c) => c,
+                Err(_) => return false,
+            };
+        let Ok(ping) = serde_json::to_string(&WireReq {
+            id: 0,
+            cmd: "ping".to_string(),
+            params: serde_json::to_value(DaemonReq::Ping).unwrap_or_default(),
+        }) else {
+            return false;
+        };
+        let mut buf = [0u8; 256];
+        if client
+            .write_all(format!("{ping}\n").as_bytes())
+            .await
+            .is_err()
+        {
+            return false;
+        }
+        matches!(
+            tokio::time::timeout(timeout, client.read(&mut buf)).await,
+            Ok(Ok(n)) if n > 0
+        )
     }
 }
 

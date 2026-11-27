@@ -10,92 +10,119 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+type IpcRead = Box<dyn tokio::io::AsyncRead + Unpin + Send>;
+type IpcWrite = Box<dyn tokio::io::AsyncWrite + Unpin + Send>;
+
 #[cfg(unix)]
-use tokio::net::{UnixListener, UnixStream};
-#[cfg(not(unix))]
-mod ipc_stub {
+mod ipc_transport {
+    use super::{IpcRead, IpcWrite};
     use std::path::Path;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
-    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+    use tokio::net::{UnixListener, UnixStream};
 
-    pub struct UnixListener;
-    pub struct UnixStream;
-    pub struct OwnedReadHalf;
-    pub struct OwnedWriteHalf;
+    pub struct IpcListener(UnixListener);
+    pub struct IpcStream(UnixStream);
 
-    impl UnixListener {
-        pub fn bind<P: AsRef<Path>>(_path: P) -> std::io::Result<Self> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "unix sockets not supported on this platform",
-            ))
+    impl IpcListener {
+        pub fn bind<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+            UnixListener::bind(path).map(Self)
         }
-        pub async fn accept(&self) -> std::io::Result<(UnixStream, std::net::SocketAddr)> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "unix sockets not supported on this platform",
-            ))
+        pub async fn accept(&mut self) -> std::io::Result<IpcStream> {
+            let (stream, _) = self.0.accept().await?;
+            Ok(IpcStream(stream))
         }
     }
 
-    impl UnixStream {
-        pub fn into_split(self) -> (OwnedReadHalf, OwnedWriteHalf) {
-            (OwnedReadHalf, OwnedWriteHalf)
+    impl IpcStream {
+        pub fn into_split(self) -> (IpcRead, IpcWrite) {
+            let (r, w) = self.0.into_split();
+            (Box::new(r), Box::new(w))
         }
     }
 
-    impl AsyncRead for OwnedReadHalf {
-        fn poll_read(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-            _buf: &mut ReadBuf<'_>,
-        ) -> Poll<std::io::Result<()>> {
-            Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "unsupported",
-            )))
-        }
-    }
-    impl AsyncWrite for OwnedWriteHalf {
+    impl tokio::io::AsyncWrite for IpcStream {
         fn poll_write(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-            _buf: &[u8],
-        ) -> Poll<std::io::Result<usize>> {
-            Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "unsupported",
-            )))
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+            buf: &[u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            std::pin::Pin::new(&mut self.0).poll_write(cx, buf)
         }
-        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-            Poll::Ready(Ok(()))
+        fn poll_flush(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::pin::Pin::new(&mut self.0).poll_flush(cx)
         }
-        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-            Poll::Ready(Ok(()))
-        }
-    }
-    impl AsyncWrite for UnixStream {
-        fn poll_write(
-            self: Pin<&mut Self>,
-            _cx: &mut Context<'_>,
-            _buf: &[u8],
-        ) -> Poll<std::io::Result<usize>> {
-            Poll::Ready(Err(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "unsupported",
-            )))
-        }
-        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-            Poll::Ready(Ok(()))
-        }
-        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-            Poll::Ready(Ok(()))
+        fn poll_shutdown(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::pin::Pin::new(&mut self.0).poll_shutdown(cx)
         }
     }
 }
+
 #[cfg(not(unix))]
-use ipc_stub::{UnixListener, UnixStream};
+mod ipc_transport {
+    use super::{IpcRead, IpcWrite};
+    use std::path::Path;
+    use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
+
+    pub struct IpcListener {
+        server: NamedPipeServer,
+        pipe_name: String,
+    }
+    pub struct IpcStream(NamedPipeServer);
+
+    impl IpcListener {
+        pub fn bind<P: AsRef<Path>>(path: P) -> std::io::Result<Self> {
+            let pipe_name = gtm::shared::paths::ipc_pipe_name(path.as_ref());
+            let server = ServerOptions::new()
+                .first_pipe_instance(true)
+                .create(&pipe_name)?;
+            Ok(Self { server, pipe_name })
+        }
+        pub async fn accept(&mut self) -> std::io::Result<IpcStream> {
+            self.server.connect().await?;
+            let connected = std::mem::replace(
+                &mut self.server,
+                ServerOptions::new().create(&self.pipe_name)?,
+            );
+            Ok(IpcStream(connected))
+        }
+    }
+
+    impl IpcStream {
+        pub fn into_split(self) -> (IpcRead, IpcWrite) {
+            let (r, w) = tokio::io::split(self.0);
+            (Box::new(r), Box::new(w))
+        }
+    }
+
+    impl tokio::io::AsyncWrite for IpcStream {
+        fn poll_write(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+            buf: &[u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            std::pin::Pin::new(&mut self.0).poll_write(cx, buf)
+        }
+        fn poll_flush(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::pin::Pin::new(&mut self.0).poll_flush(cx)
+        }
+        fn poll_shutdown(
+            mut self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::pin::Pin::new(&mut self.0).poll_shutdown(cx)
+        }
+    }
+}
+
+use ipc_transport::{IpcListener, IpcStream};
 use tokio::sync::{RwLock, broadcast, mpsc};
 use tracing::{debug, error, info, warn};
 
@@ -2339,8 +2366,8 @@ fn purge_retired_secrets() {
 
 pub struct Daemon {
     inner: Arc<DaemonInner>,
-    listener: UnixListener,
-    pulse_listener: UnixListener,
+    listener: IpcListener,
+    pulse_listener: IpcListener,
     req_tx: mpsc::UnboundedSender<(ClientId, u64, DaemonReq, ReplyTx)>,
     req_rx: mpsc::UnboundedReceiver<(ClientId, u64, DaemonReq, ReplyTx)>,
     internal_req_rx: mpsc::UnboundedReceiver<DaemonReq>,
@@ -2565,7 +2592,7 @@ impl Daemon {
             }
         }
 
-        let listener = UnixListener::bind(socket_path)
+        let listener = IpcListener::bind(socket_path)
             .map_err(|e| CoreError::Daemon(format!("bind socket: {e}")))?;
 
         let pulse_path = Path::new(&config.socket_pulse_path);
@@ -2580,7 +2607,7 @@ impl Daemon {
                 Err(e) => return Err(CoreError::Daemon(format!("remove stale pulse socket: {e}"))),
             }
         }
-        let pulse_listener = UnixListener::bind(pulse_path)
+        let pulse_listener = IpcListener::bind(pulse_path)
             .map_err(|e| CoreError::Daemon(format!("bind pulse socket: {e}")))?;
 
         let pid_file = resolve_pid_file();
@@ -2689,12 +2716,15 @@ impl Daemon {
 
         // Started whenever an id is present, and it re-reads the file each
         // poll, so the Setup form takes effect without a restart.
+        #[cfg(unix)]
         if discord_id.is_some() {
             tokio::spawn(crate::discord::serve(
                 Arc::clone(&inner),
                 inner.config.config_dir.clone(),
             ));
         }
+        #[cfg(not(unix))]
+        let _ = discord_id;
 
         Ok(Self {
             inner,
@@ -3279,7 +3309,7 @@ impl Daemon {
                 }
                 result = self.listener.accept() => {
                     match result {
-                        Ok((stream, _addr)) => {
+                        Ok(stream) => {
                             let client_id = self.next_client_id;
                             self.next_client_id += 1;
                             let inner = Arc::clone(&self.inner);
@@ -3295,7 +3325,7 @@ impl Daemon {
                 }
                 result = self.pulse_listener.accept() => {
                     match result {
-                        Ok((stream, _addr)) => {
+                        Ok(stream) => {
                             let inner = Arc::clone(&self.inner);
                             tokio::spawn(async move {
                                 Self::accept_pulse_client(stream, &inner).await;
@@ -3446,7 +3476,7 @@ impl Daemon {
 
     async fn accept_client(
         client_id: ClientId,
-        stream: UnixStream,
+        stream: IpcStream,
         inner: Arc<DaemonInner>,
         req_tx: mpsc::UnboundedSender<(ClientId, u64, DaemonReq, ReplyTx)>,
     ) {
@@ -3561,7 +3591,7 @@ impl Daemon {
         info!("client {client_id} connected");
     }
 
-    async fn accept_pulse_client(stream: UnixStream, inner: &DaemonInner) {
+    async fn accept_pulse_client(stream: IpcStream, inner: &DaemonInner) {
         let event_rx = inner.event_tx.subscribe();
         let pushed = Arc::clone(&inner.pushed);
         tokio::spawn(async move {
@@ -4029,9 +4059,12 @@ impl Daemon {
                     // Clear the presence before the process goes. Discord holds
                     // the last activity it was sent, so without this the
                     // profile keeps showing a track that stopped, indefinitely.
+                    #[cfg(unix)]
                     if let Some(id) = discord {
                         crate::discord::clear(&id).await;
                     }
+                    #[cfg(not(unix))]
+                    let _ = discord;
                     // Perform the blocking state save and file removal off the
                     // async thread so shutdown never stalls the event loop.
                     if let Some((saved, state_file)) = cleanup_state {

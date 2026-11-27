@@ -102,6 +102,23 @@ pub fn resolve_pulse_socket() -> PathBuf {
     state_dir().join("gtmd.pulse")
 }
 
+/// Named pipe name for an IPC socket path. On Windows this returns a
+/// `\\.\pipe\...` name derived from the path; on Unix it returns the path string.
+pub fn ipc_pipe_name(path: &std::path::Path) -> String {
+    #[cfg(windows)]
+    {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut h = DefaultHasher::new();
+        path.to_string_lossy().hash(&mut h);
+        format!(r"\\.\pipe\gtm-{:016x}", h.finish())
+    }
+    #[cfg(not(windows))]
+    {
+        path.to_string_lossy().into_owned()
+    }
+}
+
 /// Return the default daemon PID file path.
 pub fn resolve_pid_file() -> PathBuf {
     state_dir().join("gtmd.pid")

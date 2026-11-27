@@ -81,10 +81,16 @@ impl DaemonClient {
                 (Box::new(reader) as IpcRead, Box::new(writer) as IpcWrite)
             });
             #[cfg(not(unix))]
-            let connect_res: std::io::Result<(IpcRead, IpcWrite)> = Err(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "unix socket IPC is not supported on this platform",
-            ));
+            let connect_res: std::io::Result<(IpcRead, IpcWrite)> = {
+                let pipe_name = crate::shared::paths::ipc_pipe_name(&path);
+                match tokio::net::windows::named_pipe::ClientOptions::new().open(&pipe_name) {
+                    Ok(client) => {
+                        let (reader, writer) = tokio::io::split(client);
+                        Ok((Box::new(reader) as IpcRead, Box::new(writer) as IpcWrite))
+                    }
+                    Err(e) => Err(e),
+                }
+            };
 
             match connect_res {
                 Ok((reader, writer)) => {
@@ -2108,10 +2114,16 @@ impl IpcWorker {
                 (Box::new(reader) as IpcRead, Box::new(writer) as IpcWrite)
             });
             #[cfg(not(unix))]
-            let connect_res: std::io::Result<(IpcRead, IpcWrite)> = Err(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "unix socket IPC is not supported on this platform",
-            ));
+            let connect_res: std::io::Result<(IpcRead, IpcWrite)> = {
+                let pipe_name = crate::shared::paths::ipc_pipe_name(&self.socket_path);
+                match tokio::net::windows::named_pipe::ClientOptions::new().open(&pipe_name) {
+                    Ok(client) => {
+                        let (reader, writer) = tokio::io::split(client);
+                        Ok((Box::new(reader) as IpcRead, Box::new(writer) as IpcWrite))
+                    }
+                    Err(e) => Err(e),
+                }
+            };
 
             match connect_res {
                 Ok((reader, writer)) => {
