@@ -388,12 +388,20 @@ impl LibraryHandler {
                 .map_err(|e| CoreError::Daemon(e.to_string()))?;
                 match result {
                     Ok(Some(removed_path)) => {
+                        let removed_canon = std::fs::canonicalize(&removed_path).ok();
+                        let matches_removed = |t: &TrackInfo| {
+                            (id > 0 && t.id == id)
+                                || t.path == removed_path
+                                || removed_canon.as_ref().is_some_and(|c| {
+                                    std::fs::canonicalize(&t.path).ok().as_ref() == Some(c)
+                                })
+                        };
                         let mut state = inner.state.write().await;
-                        state.queue.retain(|t| t.id != id && t.path != removed_path);
+                        state.queue.retain(|t| !matches_removed(t));
                         let was_current = state
                             .current_track
                             .as_ref()
-                            .is_some_and(|t| (id > 0 && t.id == id) || t.path == removed_path);
+                            .is_some_and(|t| matches_removed(t));
                         drop(state);
                         if was_current {
                             Daemon::stop_playback(inner).await;
