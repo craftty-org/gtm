@@ -30,7 +30,7 @@ const CACHE_SIZE: usize = 64;
 const ARTIST_CACHE_SIZE: usize = 30;
 const DEEZER_API: &str = "https://api.deezer.com/search";
 const RATE_LIMIT_MS: u64 = 200;
-const MIN_COVER_DIM: u32 = 300;
+const MIN_COVER_DIM: u32 = 100;
 /// Default upper bound for the on-disk cover caches. User-configurable via
 /// `cover_cache_mb`; oldest-by-mtime files are pruned once the combined size of
 /// `covers/` and `artist_covers/` exceeds it.

@@ -1494,6 +1494,7 @@ fn infer_transcripts(
     feed_title: &str,
 ) -> Vec<PodcastTranscript> {
     let mut out = Vec::new();
+    let _lower = description.to_ascii_lowercase();
     // Lex Fridman publishes transcript pages linked in episode descriptions.
     if feed_title.to_ascii_lowercase().contains("lex fridman") {
         for token in description.split_whitespace() {
@@ -1527,6 +1528,39 @@ fn infer_transcripts(
                         rel: Some("transcript".into()),
                     });
                 }
+            }
+        }
+    }
+    // Generic: look for transcript-like URLs in description (vtt/srt/json/html pages)
+    for token in description.split_whitespace() {
+        let url = token
+            .trim_matches(|c: char| "\"'<>[](),;".contains(c))
+            .trim();
+        let url_l = url.to_ascii_lowercase();
+        if url.starts_with("http://") || url.starts_with("https://") {
+            if url_l.ends_with(".vtt") {
+                out.push(PodcastTranscript {
+                    url: Some(url.to_string()),
+                    text: None,
+                    kind: Some("text/vtt".into()),
+                    rel: Some("captions".into()),
+                });
+            } else if url_l.ends_with(".srt") {
+                out.push(PodcastTranscript {
+                    url: Some(url.to_string()),
+                    text: None,
+                    kind: Some("text/srt".into()),
+                    rel: Some("captions".into()),
+                });
+            } else if url_l.contains("transcript") && (url_l.ends_with(".json") || url_l.contains("transcript")) {
+                // Heuristic: could be json transcript or html page
+                let kind = if url_l.ends_with(".json") { "application/json" } else { "text/html" };
+                out.push(PodcastTranscript {
+                    url: Some(url.to_string()),
+                    text: None,
+                    kind: Some(kind.into()),
+                    rel: Some("transcript".into()),
+                });
             }
         }
     }

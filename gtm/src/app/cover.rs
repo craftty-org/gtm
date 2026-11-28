@@ -166,17 +166,28 @@ impl App {
         let client = self.client.clone();
         let ipc_tx = self.ipc_tx.clone();
         tokio::spawn(async move {
-            let mut bytes = match client.art().cover_for(tid, art_path).await {
-                Ok(enc) => enc.and_then(b64),
-                Err(_) => match client.art().cover(tid).await {
-                    Ok(Some(enc)) => b64(enc),
-                    _ => None,
-                },
-            };
-            if bytes.is_none()
-                && let Some(u) = url
-            {
-                bytes = client.image_cover(&u).await.ok().flatten();
+            let mut bytes = None;
+            // Retry a few times with backoff to be more predictable on transient failures
+            for attempt in 0..3u32 {
+                bytes = match client.art().cover_for(tid, art_path.clone()).await {
+                    Ok(enc) => enc.and_then(b64),
+                    Err(_) => match client.art().cover(tid).await {
+                        Ok(Some(enc)) => b64(enc),
+                        _ => None,
+                    },
+                };
+                if bytes.is_some() {
+                    break;
+                }
+                if let Some(u) = url.as_ref() {
+                    bytes = client.image_cover(u).await.ok().flatten();
+                    if bytes.is_some() {
+                        break;
+                    }
+                }
+                if attempt < 2 {
+                    tokio::time::sleep(std::time::Duration::from_millis(150 * (attempt as u64 + 1))).await;
+                }
             }
             // Always answer, including "no art": the reply handler only clears
             // `pending_gen` on a reply, so a silent miss would leave the slot

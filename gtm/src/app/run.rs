@@ -1071,6 +1071,9 @@ impl App {
                         self.np_cover.track_id = cover_tid;
                         if had_art {
                             self.cover_anim_started = Some(std::time::Instant::now());
+                        } else {
+                            // Allow retry later if art wasn't available yet
+                            self.np_cover.fetched_for = None;
                         }
                         if !no_image_protocol() {
                             self.cover_sync();

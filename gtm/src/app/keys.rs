@@ -2916,6 +2916,30 @@ impl App {
                     if let Some(ep) = self.podcast.episodes.get(idx) {
                         self.podcast.timestamps = ep.timestamps.clone();
                         self.podcast.timestamps_title = ep.title.clone();
+                        // Merge in timed transcript/lyric lines if available
+                        if let Some(lyrics) = &self.lyrics.data {
+                            for line in &lyrics.lines {
+                                if line.timestamp >= 0.0 && !line.text.trim().is_empty() {
+                                    let secs = line.timestamp as u64;
+                                    let label = line.text.chars().take(80).collect::<String>();
+                                    // Avoid duplicates
+                                    if !self
+                                        .podcast
+                                        .timestamps
+                                        .iter()
+                                        .any(|t| t.secs == secs && t.label == label)
+                                    {
+                                        self.podcast.timestamps.push(
+                                            crate::providers::podcast::PodcastTimestamp {
+                                                secs,
+                                                label,
+                                            },
+                                        );
+                                    }
+                                }
+                            }
+                            self.podcast.timestamps.sort_by_key(|t| t.secs);
+                        }
                         self.pickers.open(PickerId::PodcastTimestamps);
                     }
                 }
