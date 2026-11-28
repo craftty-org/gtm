@@ -1552,9 +1552,15 @@ fn infer_transcripts(
                     kind: Some("text/srt".into()),
                     rel: Some("captions".into()),
                 });
-            } else if url_l.contains("transcript") && (url_l.ends_with(".json") || url_l.contains("transcript")) {
+            } else if url_l.contains("transcript")
+                && (url_l.ends_with(".json") || url_l.contains("transcript"))
+            {
                 // Heuristic: could be json transcript or html page
-                let kind = if url_l.ends_with(".json") { "application/json" } else { "text/html" };
+                let kind = if url_l.ends_with(".json") {
+                    "application/json"
+                } else {
+                    "text/html"
+                };
                 out.push(PodcastTranscript {
                     url: Some(url.to_string()),
                     text: None,

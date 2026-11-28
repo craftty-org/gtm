@@ -186,7 +186,10 @@ impl App {
                     }
                 }
                 if attempt < 2 {
-                    tokio::time::sleep(std::time::Duration::from_millis(150 * (attempt as u64 + 1))).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(
+                        150 * (attempt as u64 + 1),
+                    ))
+                    .await;
                 }
             }
             // Always answer, including "no art": the reply handler only clears
