@@ -3135,15 +3135,9 @@ impl Daemon {
 
         // Restore exactly as the user left it: if the saved state carried a
         // `current_track`, load it at the saved position so the UI has something
-        // to show and pressing play resumes there.
-        //
-        // Sound only when `resume_on_start` says so. The daemon outlives the
-        // client, so playing here means the machine makes noise at whoever is in
-        // the room whenever they next run gtm — so it does not, unless asked.
-        // A failed restore (e.g. missing file) clears the ghost entry so the TUI
-        // doesn't show a stale track.
+        // to show. Never auto-play on cold start / daemon startup; playback
+        // requires an explicit play command from the user.
         let resume_inner = Arc::clone(&self.inner);
-        let resume_playing = self.inner.config.resume_on_start;
         tokio::spawn(async move {
             let (path, start_pos) = {
                 let state = resume_inner.state.read().await;
@@ -3165,11 +3159,8 @@ impl Daemon {
                     let _ = tokio::time::timeout(Duration::from_secs(20), linked.changed()).await;
                 }
             }
-            let res = if resume_playing {
-                Cmd::play(&resume_inner, &path, start_pos, false).await
-            } else {
-                Cmd::restore(&resume_inner, &path, start_pos).await
-            };
+            // Always restore (load, don't play) on startup.
+            let res = Cmd::restore(&resume_inner, &path, start_pos).await;
             // Both shapes are a failed resume. `Cmd::play` reports most of its
             // refusals as `Ok(DaemonRes::Error)` rather than `Err`, so matching
             // only the latter left the state cleared on half the failures and

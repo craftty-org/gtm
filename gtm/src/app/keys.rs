@@ -153,10 +153,11 @@ impl App {
             self.onboard = false;
             self.mark_all_dirty();
         }
-        // Ctrl+Z: suspend to background (pass-through SIGTSTP)
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('z') {
-            self.pending_suspend = true;
-            return false;
+        // Ctrl+B: toggle left pane visibility
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('b') {
+            self.left_pane_visible = !self.left_pane_visible;
+            self.mark_all_dirty();
+            return true;
         }
         // Reset pending_motion if the key is not 'g'
         if key.code != KeyCode::Char('g') {
@@ -2917,7 +2918,7 @@ impl App {
                         self.podcast.timestamps = ep.timestamps.clone();
                         self.podcast.timestamps_title = ep.title.clone();
                         // Merge in timed transcript/lyric lines if available
-                        if let Some(lyrics) = &self.lyrics.data {
+                        if let Some(lyrics) = &self.lyrics.current {
                             for line in &lyrics.lines {
                                 if line.timestamp >= 0.0 && !line.text.trim().is_empty() {
                                     let secs = line.timestamp as u64;

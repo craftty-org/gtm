@@ -2348,25 +2348,7 @@ impl App {
                 break 'outer;
             }
 
-            // Handle Ctrl+Z suspend: leave terminal, SIGTSTP, re-init on resume
-            if self.pending_suspend {
-                self.pending_suspend = false;
-                #[cfg(unix)]
-                {
-                    leave_tui();
-                    // Suspend: this blocks until SIGCONT
-                    unsafe {
-                        libc::raise(libc::SIGTSTP);
-                    }
-                    // Resumed: re-init terminal
-                    enter_tui()?;
-                    terminal.clear()?;
-                }
-                #[cfg(not(unix))]
-                {
-                    // No SIGTSTP on non-Unix; just clear the flag.
-                }
-            }
+
         }
         Ok(())
     }

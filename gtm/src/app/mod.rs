@@ -483,6 +483,7 @@ pub struct App {
     /// playlist name.
     pub playlist_open: bool,
     pub library_pane_focus: bool,
+    pub left_pane_visible: bool,
     pub settings_category: usize,
     pub settings_pane_focus: bool,
     pub settings_option: usize,
@@ -763,7 +764,6 @@ pub struct App {
     pub left_pane_lists: Vec<String>,
     /// Master switch for the left-pane track preview card.
     pub show_preview: bool,
-    pub pending_suspend: bool,
     pub(crate) last_config_mtime: Option<std::time::SystemTime>,
 }
 
@@ -1569,6 +1569,7 @@ impl App {
             playlist_group: PlaylistGroup::Playlists,
             playlist_open: false,
             library_pane_focus: false,
+            left_pane_visible: true,
             settings_category: 0,
             settings_pane_focus: false,
             settings_option: 0,
@@ -1807,7 +1808,6 @@ impl App {
             hide_footer: false,
             left_pane_lists: left_pane_defaults(),
             show_preview: true,
-            pending_suspend: false,
             setup: SetupView::default(),
             last_config_mtime: std::fs::metadata(prefs_path())
                 .ok()

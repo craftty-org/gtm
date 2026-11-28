@@ -955,7 +955,9 @@ impl Render {
             (area.height / 3).clamp(8, 14)
         };
 
-        let lib_width: u16 = if is_narrow {
+        let lib_width: u16 = if !app.left_pane_visible {
+            0
+        } else if is_narrow {
             (app.terminal_cols / 3)
                 .max(12)
                 .min(area.width.saturating_sub(2))
